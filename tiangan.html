@@ -1,0 +1,44 @@
+<!-- save as tiangan_flashcards.html -->
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>天干记忆卡片</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{font-family:Arial, sans-serif; background:#f8fafd; padding:22px}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:14px; max-width:980px; margin:0 auto}
+  .card{perspective:900px}
+  .inner{position:relative; width:100%; padding-top:120%; border-radius:8px; transform-style:preserve-3d; transition:transform .6s; box-shadow:0 8px 18px rgba(0,0,0,.08)}
+  .inner.flipped{transform:rotateY(180deg)}
+  .face{position:absolute; inset:0; backface-visibility:hidden; display:flex;align-items:center;justify-content:center;border-radius:8px}
+  .front{background:#fff;font-size:28px}
+  .back{background:#fff;padding:10px;transform:rotateY(180deg);font-size:14px}
+  .hint{font-size:13px;color:#666}
+</style>
+</head><body>
+<h2 style="text-align:center">天干记忆交片（点卡片翻转）</h2>
+<div class="grid" id="grid"></div>
+
+<script>
+const tg = [
+ {k:'甲',hint:'阳木：突破、开端'},
+ {k:'乙',hint:'阴木：柔韧、成长'},
+ {k:'丙',hint:'阳火：显耀、外放'},
+ {k:'丁',hint:'阴火：稳热、持久'},
+ {k:'戊',hint:'阳土：守护、稳重'},
+ {k:'己',hint:'阴土：孕育、包容'},
+ {k:'庚',hint:'阳金：断决、改革'},
+ {k:'辛',hint:'阴金：精炼、完美'},
+ {k:'壬',hint:'阳水：流动、灵感'},
+ {k:'癸',hint:'阴水：微润、潜藏'}
+];
+
+const grid = document.getElementById('grid');
+tg.forEach(item=>{
+  const c = document.createElement('div'); c.className='card';
+  const inner = document.createElement('div'); inner.className='inner';
+  inner.innerHTML = `<div class="face front"><div><strong style="font-size:36px">${item.k}</strong></div></div>
+                     <div class="face back"><div><strong>${item.k}</strong><div class="hint">${item.hint}</div></div></div>`;
+  c.appendChild(inner);
+  c.addEventListener('click', ()=> inner.classList.toggle('flipped'));
+  grid.appendChild(c);
+});
+</script>
+</body></html>

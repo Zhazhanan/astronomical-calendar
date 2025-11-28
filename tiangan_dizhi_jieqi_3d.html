@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8" />
+    <title>天干地支节气 3D 天文学版</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+        #info {
+            position: absolute; top: 10px; left: 10px; color: #fff;
+            font-family: Arial; z-index: 10; padding: 5px 10px;
+            background: rgba(0,0,0,0.4); border-radius: 6px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div id="info">天干 — 地支 — 二十四节气（3D 专业版）</div>
+
+<!-- 关键：必须是非模块版 three.min.js -->
+<script src="./three.min.js"></script>
+
+<!-- 关键：必须是非模块版 OrbitControls -->
+<script src="./OrbitControls.js"></script>
+
+<script>
+    // 1. ThreeJS 基础场景
+    const scene = new THREE.Scene();
+
+    const camera = new THREE.PerspectiveCamera(
+        60, window.innerWidth / window.innerHeight, 0.1, 5000
+    );
+    camera.position.set(0, 50, 200);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // 2. 轨道控制器（非模块写法）
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    // 3. 星空背景
+    const stars = new THREE.Points(
+        new THREE.BufferGeometry(),
+        new THREE.PointsMaterial({ color: 0xffffff, size: 1 })
+    );
+    const starPositions = [];
+    for (let i = 0; i < 2000; i++) {
+        starPositions.push(
+            (Math.random() - 0.5) * 2000,
+            (Math.random() - 0.5) * 2000,
+            (Math.random() - 0.5) * 2000
+        );
+    }
+    stars.geometry.setAttribute("position",
+        new THREE.Float32BufferAttribute(starPositions, 3)
+    );
+    scene.add(stars);
+
+    // 4. 黄道（Earth Orbit）
+    const eclipticGeo = new THREE.RingGeometry(98,100,128);
+    const eclipticMat = new THREE.MeshBasicMaterial({ color: 0xffcc00, side: THREE.DoubleSide });
+    const ecliptic = new THREE.Mesh(eclipticGeo, eclipticMat);
+    ecliptic.rotation.x = -Math.PI / 2;
+    scene.add(ecliptic);
+
+    // 5. 赤道
+    const equatorGeo = new THREE.RingGeometry(98,100,128);
+    const equatorMat = new THREE.MeshBasicMaterial({ color: 0x00aaff, side: THREE.DoubleSide });
+    const equator = new THREE.Mesh(equatorGeo, equatorMat);
+    equator.rotation.x = -Math.PI / 2;
+    equator.rotation.z = 23.4 * Math.PI / 180; // 地轴倾角
+    scene.add(equator);
+
+    // 6. 二十四节气中文标签
+    const jieqiNames = [
+        "立春","雨水","惊蛰","春分","清明","谷雨",
+        "立夏","小满","芒种","夏至","小暑","大暑",
+        "立秋","处暑","白露","秋分","寒露","霜降",
+        "立冬","小雪","大雪","冬至","小寒","大寒"
+    ];
+
+    jieqiNames.forEach((name, i) => {
+        const angle = (i / 24) * Math.PI * 2;
+        const x = Math.cos(angle) * 120;
+        const z = Math.sin(angle) * 120;
+
+        const div = document.createElement("div");
+        div.style.position = "absolute";
+        div.style.color = "#fff";
+        div.style.fontSize = "16px";
+        div.style.transform = "translate(-50%, -50%)";
+        div.innerHTML = name;
+        document.body.appendChild(div);
+
+        // 每帧更新标签位置
+        div.updatePosition = () => {
+            const vector = new THREE.Vector3(x, 0, z);
+            vector.project(camera);
+            div.style.left = (vector.x * 0.5 + 0.5) * window.innerWidth + "px";
+            div.style.top  = (-vector.y * 0.5 + 0.5) * window.innerHeight + "px";
+        };
+    });
+
+    // 7. 渲染循环
+    function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+
+        [...document.body.children].forEach(el => {
+            if (el.updatePosition) el.updatePosition();
+        });
+
+        renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // 8. 自适应窗口
+    window.addEventListener("resize", () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+</script>
+
+</body>
+</html>

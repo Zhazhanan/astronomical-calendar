@@ -1,0 +1,105 @@
+<!-- save as five_elements_cycle.html -->
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>五行动画（循环）</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{
+    --wood:#2E8B57;  /* 木 */
+    --fire:#FF6B35;  /* 火 */
+    --earth:#D2B48C; /* 土 */
+    --metal:#B0C4DE; /* 金 */
+    --water:#3A9BD9; /* 水 */
+    --bg:#fff;
+  }
+  body{margin:0; display:flex; align-items:center; justify-content:center; height:100vh; background:var(--bg); font-family:Arial, sans-serif}
+  svg{width:78vmin; height:78vmin}
+  .el{filter:drop-shadow(0 6px 10px rgba(0,0,0,0.12))}
+  .label{font-size:1.6vmin; font-weight:600; fill:#111}
+  .center-note{font-size:1.8vmin; fill:#333; text-anchor:middle}
+</style>
+</head>
+<body>
+<svg viewBox="-120 -120 240 240" xmlns="http://www.w3.org/2000/svg" aria-label="五行动画">
+  <!-- background circle -->
+  <defs>
+    <radialGradient id="g" cx="50%" cy="40%">
+      <stop offset="0%" stop-color="#fff"/>
+      <stop offset="100%" stop-color="#f6f6f8"/>
+    </radialGradient>
+  </defs>
+  <circle cx="0" cy="0" r="110" fill="url(#g)"/>
+  <!-- five nodes positions (pentagon) -->
+  <g id="nodes">
+    <g class="el" transform="translate(0,-92)">
+      <circle r="18" fill="var(--wood)" id="wood"/>
+      <text class="label" x="0" y="4" text-anchor="middle" fill="#fff">木 (甲/乙)</text>
+    </g>
+    <g class="el" transform="translate(88,-28)">
+      <circle r="18" fill="var(--fire)" id="fire"/>
+      <text class="label" x="0" y="4" text-anchor="middle" fill="#fff">火 (丙/丁)</text>
+    </g>
+    <g class="el" transform="translate(54,78)">
+      <circle r="18" fill="var(--earth)" id="earth"/>
+      <text class="label" x="0" y="4" text-anchor="middle" fill="#333">土 (戊/己)</text>
+    </g>
+    <g class="el" transform="translate(-54,78)">
+      <circle r="18" fill="var(--metal)" id="metal"/>
+      <text class="label" x="0" y="4" text-anchor="middle" fill="#111">金 (庚/辛)</text>
+    </g>
+    <g class="el" transform="translate(-88,-28)">
+      <circle r="18" fill="var(--water)" id="water"/>
+      <text class="label" x="0" y="4" text-anchor="middle" fill="#fff">水 (壬/癸)</text>
+    </g>
+  </g>
+
+  <!-- animated moving orb that travels nodes in order wood->fire->earth->metal->water->wood -->
+  <g>
+    <circle id="orb" r="9" fill="#fff" stroke="#222" stroke-opacity="0.06" opacity="0.98" />
+    <text class="center-note" x="0" y="6">五行能量循环</text>
+  </g>
+
+  <script><![CDATA[
+    // JavaScript for animation path
+    const svg = document.querySelector('svg');
+    const orb = document.getElementById('orb');
+    // coordinates must match the transforms above
+    const pts = [
+      {x:0, y:-92, color:getComputedStyle(document.documentElement).getPropertyValue('--wood')},
+      {x:88, y:-28, color:getComputedStyle(document.documentElement).getPropertyValue('--fire')},
+      {x:54, y:78, color:getComputedStyle(document.documentElement).getPropertyValue('--earth')},
+      {x:-54, y:78, color:getComputedStyle(document.documentElement).getPropertyValue('--metal')},
+      {x:-88, y:-28, color:getComputedStyle(document.documentElement).getPropertyValue('--water')}
+    ];
+    // flatten CSS var values
+    pts.forEach(p=>p.color=p.color.trim());
+
+    let i=0, t=0;
+    const stepDur = 1800; // ms per leg
+    const ease = (x)=> (1 - Math.cos(Math.PI * x)) / 2;
+    function frame(ts){
+      requestAnimationFrame(frame);
+      // compute progress along current leg
+      const now = performance.now();
+      const legStart = now - (now % stepDur);
+      const tt = ((now % stepDur) / stepDur);
+      const s = ease(tt);
+      const a = pts[i];
+      const b = pts[(i+1) % pts.length];
+      const x = a.x + (b.x - a.x) * s;
+      const y = a.y + (b.y - a.y) * s;
+      orb.setAttribute('cx', x);
+      orb.setAttribute('cy', y);
+      // color interpolation simple step on mid
+      orb.setAttribute('fill', tt<0.5 ? a.color : b.color);
+      if(tt>0.99){ i = (i+1) % pts.length; }
+    }
+    // init
+    orb.setAttribute('cx', pts[0].x); orb.setAttribute('cy', pts[0].y);
+    requestAnimationFrame(frame);
+  ]]></script>
+</svg>
+</body>
+</html>
