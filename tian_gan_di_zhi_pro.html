@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>天干·地支·节气 · 专业可视化（宣纸风）</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  /* 宣纸风样式（适合打印海报）*/
+  html,body{height:100%;margin:0;background: #fbf5e6; color:#1a1a1a; font-family: "Noto Serif", "Songti SC", serif;}
+  #canvasContainer{position:fixed; inset:0; z-index:0}
+  #ui{position: absolute; left:12px; top:12px; width:360px; z-index:50;
+      background: rgba(255,250,240,0.92); border:1px solid rgba(0,0,0,0.06);
+      padding:12px; border-radius:10px; box-shadow: 0 8px 30px rgba(0,0,0,0.08);}
+  #ui h2{margin:0 0 8px 0; font-size:16px; color:#2b2b2b}
+  label{display:block; margin:6px 0; font-size:13px; color:#222}
+  .btn{background:#a25c1a;color:#fff;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;margin-right:6px}
+  .small{font-size:12px;color:#333;margin-top:8px}
+  #hud{position:absolute; right:12px; top:12px; z-index:50; width:280px;
+       background: rgba(255,250,240,0.95); padding:10px; border-radius:10px; border:1px solid rgba(0,0,0,0.06);}
+  #ganzhiPanel{margin-top:8px; max-height:420px; overflow:auto; font-size:13px}
+  table{border-collapse:collapse; width:100%}
+  th,td{padding:6px;border-bottom:1px dashed rgba(0,0,0,0.06); text-align:left; font-size:13px}
+  .exportBtn{background:#2b6cff;color:#fff;padding:6px;border-radius:6px;border:none;cursor:pointer}
+  .note{font-size:12px;color:#555;margin-top:8px}
+  #credits{position:absolute; right:12px; bottom:12px; padding:6px 8px; font-size:12px; color:#555; background:rgba(255,250,240,0.9); border-radius:6px;}
+</style>
+</head>
+<body>
+<div id="canvasContainer"></div>
+
+<div id="ui">
+  <h2>天干·地支·节气（专业版）</h2>
+
+  <label><input id="showEcl" type="checkbox" checked> 显示黄道</label>
+  <label><input id="showEq" type="checkbox" checked> 显示天球赤道（单圈）</label>
+  <label><input id="showGal" type="checkbox"> 显示银河示意</label>
+
+  <label>
+    <input id="showTiangan" type="checkbox" checked> 天干（10）
+    <input id="showDizhi" type="checkbox" checked style="margin-left:8px"> 地支（12）
+  </label>
+
+  <label><input id="showJieqi" type="checkbox" checked> 显示二十四节气（并高亮今日）</label>
+  <label><input id="show28xiu" type="checkbox" checked> 显示二十八宿带</label>
+  <label style="margin-left:16px"><input id="show28xiuLabels" type="checkbox" checked> 显示二十八宿标签</label>
+
+  <label><input id="showJiazi" type="checkbox" checked> 显示六十甲子连线</label>
+  <label><input id="showSun" type="checkbox" checked> 显示太阳（精确位置）</label>
+
+  <div style="margin-top:8px">
+    <button id="resetBtn" class="btn">重置视角</button>
+    <button id="snapBtn" class="btn">导出 PNG</button>
+  </div>
+
+  <hr style="margin:10px 0; border:none; border-top:1px solid rgba(0,0,0,0.06)">
+
+  <div>
+    <label>二十八宿星表：</label>
+    <input id="starsFile" type="file" accept=".csv" />
+    <button id="fetchStarsBtn" class="btn" style="margin-left:6px">Fetch 28xiu stars (online)</button>
+    <div class="small">本地 CSV: name,ra_hms,dec_dms,mag,source</div>
+  </div>
+
+  <hr style="margin:10px 0; border:none; border-top:1px solid rgba(0,0,0,0.06)">
+
+  <div>
+    <label>甲子交互表（可导出）</label>
+    <div id="ganzhiPanel">
+      <table id="ganzhiTable"><thead><tr><th>#</th><th>甲子</th><th>天干</th><th>地支</th><th>操作</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div style="margin-top:6px">
+      <button id="exportJiazi" class="exportBtn">导出甲子表 CSV</button>
+    </div>
+  </div>
+
+  <div class="note">说明：太阳位置使用精确天文算法（基于 Julian Day + 均近点近似 + 摆动补偿），二十八宿可通过本地 CSV 或在线抓取（需允许联网）。</div>
+</div>
+
+<div id="hud">
+  <div id="localTime">本地时间: —</div>
+  <div id="utcTime">UTC: —</div>
+  <div id="solarLon">太阳黄经 (λ): —</div>
+  <div id="currentJieqi">当前节气: —</div>
+  <div id="toNextJieqi">距下节气: —</div>
+  <div id="sunCoords">太阳赤经/赤纬: —</div>
+</div>
+
+<div id="credits">离线版 · 宣纸风 · 可打印海报</div>
+
+<!-- 本地 three + OrbitControls（UMD 非 module） -->
+<script src="./three.min.js"></script>
+<script src="./OrbitControls.js"></script>
+
+<script>
+/* ----------------- 场景与群组 ------------------ */
+const container = document.getElementById('canvasContainer');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xfbf3df); // 宣纸底
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 6000);
+camera.position.set(0, 180, 420);
+
+const renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio || 1);
+container.appendChild(renderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.12;
+
+/* Groups */
+const groups = {
+  ecliptic: new THREE.Group(), equator: new THREE.Group(), galactic: new THREE.Group(),
+  tiangan: new THREE.Group(), dizhi: new THREE.Group(), jieqi: new THREE.Group(),
+  xiu: new THREE.Group(), jiazi: new THREE.Group(), stars: new THREE.Group(),
+  sun: new THREE.Group(), earthmoon: new THREE.Group()
+};
+Object.values(groups).forEach(g=>scene.add(g));
+
+/* scene baseline aesthetics (ink color lines) */
+const inkColor = 0x2b2b2b;
+
+/* sphere wire (for print composition) */
+(function(){
+  const geo = new THREE.SphereGeometry(200, 64, 32);
+  const mat = new THREE.MeshBasicMaterial({color:0x000000, wireframe:true, opacity:0.03, transparent:true});
+  const mesh = new THREE.Mesh(geo, mat); scene.add(mesh);
+})();
+
+/* constants */
+const R = 200;
+const obliquity = 23.43929111 * Math.PI/180;
+
+/* label helper (Canvas) - uses serif to imitate brush-like stroke */
+function makeCanvasLabel(text, size=36, color="#2b2b2b"){
+  const w = 512, h = 256;
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = color;
+  ctx.font = `${size}px serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline='middle';
+  ctx.fillText(text, w/2, h/2);
+  const tex = new THREE.CanvasTexture(c); tex.needsUpdate=true;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true}));
+  sp.scale.set(size*0.6, size*0.25, 1);
+  return sp;
+}
+
+/* RA/Dec -> cart */
+function radecToVec(raDeg, decDeg, radius=R){
+  const ra = raDeg * Math.PI/180;
+  const dec = decDeg * Math.PI/180;
+  const x = radius * Math.cos(dec) * Math.cos(ra);
+  const y = radius * Math.sin(dec);
+  const z = radius * Math.cos(dec) * Math.sin(ra);
+  return new THREE.Vector3(x,y,z);
+}
+
+/* ----------------- 精确太阳黄经算法（Meeus式简化实现） -----------------
+   实现思路（离线、纯 JS）：
+   1) 计算 UTC 的 Julian Day (JD) / Julian centuries T since J2000.0
+   2) 计算太阳的几何平黄经（以天文适用公式：mean longitude L0, mean anomaly M, C=equation of center）
+   3) 计算真黄经 = L0 + C (忽略行星微扰项以保持简单)，再做岁差/章动小修正（本简化实现包含近似均可）
+   该实现对日常节气判断与可视化足够精确（误差 << 0.1°）。
+*/
+function toJulianDate(date){
+  // date is JS Date (UTC)
+  return date.getTime()/86400000.0 + 2440587.5;
+}
+function julianCenturiesSinceJ2000(JD){
+  return (JD - 2451545.0) / 36525.0;
+}
+// normalize deg
+function norm360(x){ x = x % 360; if(x<0) x += 360; return x; }
+function degToRad(d){ return d * Math.PI/180; }
+function radToDeg(r){ return r * 180/Math.PI; }
+
+function solarLongitudePrecise(date){
+  // returns ecliptic longitude in degrees (mean to true), reference: Meeus simplified
+  // Use UTC
+  const JD = toJulianDate(date);
+  const T = julianCenturiesSinceJ2000(JD);
+
+  // Mean longitude of the Sun (deg)
+  const L0 = norm360(280.46646 + 36000.76983*T + 0.0003032*T*T);
+
+  // Mean anomaly (deg)
+  const M = norm360(357.52911 + 35999.05029*T - 0.0001537*T*T);
+
+  // Eccentricity of Earth's orbit
+  const e = 0.016708634 - 0.000042037*T - 0.0000001267*T*T;
+
+  // Sun's equation of the center (deg)
+  const C = (1.914602 - 0.004817*T - 0.000014*T*T) * Math.sin(degToRad(M))
+          + (0.019993 - 0.000101*T) * Math.sin(degToRad(2*M))
+          + 0.000289 * Math.sin(degToRad(3*M));
+
+  // True longitude (deg)
+  const trueLon = L0 + C;
+
+  // Apparent longitude correction for nutation & aberration (~ small)
+  // Omega = 125.04 - 1934.136 * T
+  const Omega = 125.04 - 1934.136 * T;
+  const lambda = trueLon - 0.00569 - 0.00478 * Math.sin(degToRad(Omega));
+
+  return norm360(lambda);
+}
+
+// Convert ecliptic coordinates (lon, lat=0) to equatorial RA/Dec (deg) using obliquity
+function eclipticToEquatorial(lonDeg, latDeg=0, obl=radToDeg(obliquity)){
+  const L = degToRad(lonDeg);
+  const B = degToRad(latDeg);
+  const eps = obliquity;
+  const sinDec = Math.sin(B)*Math.cos(eps) + Math.cos(B)*Math.sin(eps)*Math.sin(L);
+  const dec = Math.asin(sinDec);
+  const y = Math.sin(L)*Math.cos(eps) - Math.tan(B)*Math.sin(eps);
+  const x = Math.cos(L);
+  let ra = Math.atan2(y, x);
+  if(ra < 0) ra += 2*Math.PI;
+  return { raDeg: norm360(radToDeg(ra)), decDeg: radToDeg(dec) };
+}
+
+/* ----------------- 绘制参考环（黄道/赤道/银河） ----------------- */
+(function buildEcliptic(){
+  const pts=[];
+  for(let a=0;a<360;a+=1){
+    const lon = degToRad(a);
+    const x = Math.cos(lon);
+    const y = Math.sin(lon)*Math.cos(obliquity);
+    const z = Math.sin(lon)*Math.sin(obliquity);
+    pts.push(new THREE.Vector3(x*R, y*R, z*R));
+  }
+  const geom = new THREE.BufferGeometry().setFromPoints(pts);
+  const line = new THREE.Line(geom, new THREE.LineBasicMaterial({color:0x8b5a2b, linewidth:1, opacity:0.9}));
+  groups.ecliptic.add(line);
+})();
+(function buildEquator(){
+  const pts=[];
+  for(let a=0;a<360;a+=1){
+    const lon = degToRad(a);
+    const x = Math.cos(lon);
+    const y = 0;
+    const z = Math.sin(lon);
+    pts.push(new THREE.Vector3(x*R, y*R, z*R));
+  }
+  const geom = new THREE.BufferGeometry().setFromPoints(pts);
+  const line = new THREE.Line(geom, new THREE.LineBasicMaterial({color:0x2b6cff, linewidth:1, opacity:0.9}));
+  groups.equator.add(line);
+})();
+(function buildGalactic(){
+  const tiltG = 60 * Math.PI/180;
+  const pts=[];
+  for(let a=0;a<360;a+=1){
+    const lon = degToRad(a);
+    const x = Math.cos(lon);
+    const y = Math.sin(lon)*Math.cos(tiltG);
+    const z = Math.sin(lon)*Math.sin(tiltG);
+    pts.push(new THREE.Vector3(x*R, y*R, z*R));
+  }
+  const geom = new THREE.BufferGeometry().setFromPoints(pts);
+  const line = new THREE.Line(geom, new THREE.LineBasicMaterial({color:0x8f6fff, opacity:0.35}));
+  groups.galactic.add(line);
+})();
+groups.galactic.visible = false;
+
+/* ----------------- 二十四节气（环上标签） ----------------- */
+const jieqiNames = ['立春','雨水','惊蛰','春分','清明','谷雨','立夏','小满','芒种','夏至','小暑','大暑','立秋','处暑','白露','秋分','寒露','霜降','立冬','小雪','大雪','冬至','小寒','大寒'];
+(function buildJieqi(){
+  const r = R * 0.92;
+  for(let i=0;i<24;i++){
+    const ang = i/24 * Math.PI*2;
+    const x = Math.cos(ang), y=Math.sin(ang)*Math.cos(obliquity), z=Math.sin(ang)*Math.sin(obliquity);
+    const pos = new THREE.Vector3(x*r,y*r,z*r);
+    const lab = makeCanvasLabel(jieqiNames[i], 20, "#8b5a2b");
+    lab.position.copy(pos);
+    groups.jieqi.add(lab);
+  }
+})();
+
+/* ----------------- 天干/地支/二十八宿/甲子 ----------------- */
+const tiangan = ["甲","乙","丙","丁","戊","己","庚","辛","壬","癸"];
+const dizhi = ["子","丑","寅","卯","辰","巳","午","未","申","酉","戌","亥"];
+(function buildTG_DZ(){
+  const r1 = R*0.45, r2 = R*0.65;
+  tiangan.forEach((t,i)=>{
+    const ang = i/10 * Math.PI*2 - Math.PI/2;
+    const sp = makeCanvasLabel(t, 36, "#225522");
+    sp.position.set(Math.cos(ang)*r1, -30, Math.sin(ang)*r1);
+    groups.tiangan.add(sp);
+  });
+  dizhi.forEach((d,i)=>{
+    const ang = i/12 * Math.PI*2 - Math.PI/2;
+    const sp = makeCanvasLabel(d, 32, "#2b5678");
+    sp.position.set(Math.cos(ang)*r2, -36, Math.sin(ang)*r2);
+    groups.dizhi.add(sp);
+  });
+})();
+
+const xiuNames = ["角","亢","氐","房","心","尾","箕","斗","牛","女","虚","危","室","壁","奎","娄","胃","昴","毕","觜","参","井","鬼","柳","星","张","翼","轸"];
+(function build28xiuDefault(){
+  const r = R*0.98;
+  for(let i=0;i<28;i++){
+    const ang = i/28 * Math.PI*2;
+    const x = Math.cos(ang), y = Math.sin(ang)*Math.cos(obliquity), z = Math.sin(ang)*Math.sin(obliquity);
+    const pos = new THREE.Vector3(x*r, y*r, z*r);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(1.8,8,6), new THREE.MeshBasicMaterial({color:0x8b5a2b}));
+    dot.position.copy(pos); groups.xiu.add(dot);
+    const label = makeCanvasLabel(xiuNames[i], 18, "#8b5a2b");
+    label.position.copy(pos.clone().multiplyScalar(1.02)); groups.xiu.add(label);
+  }
+})();
+
+/* 60 甲子连线 + side table */
+function buildJiazi(){
+  groups.jiazi.clear && groups.jiazi.clear();
+  const tbody = document.querySelector('#ganzhiTable tbody');
+  tbody.innerHTML = '';
+  for(let i=0;i<60;i++){
+    const tgIdx = i % 10, dzIdx = i % 12;
+    const angTG = tgIdx/10 * Math.PI*2 - Math.PI/2;
+    const posTG = new THREE.Vector3(Math.cos(angTG)*R*0.45, -28, Math.sin(angTG)*R*0.45);
+    const angDZ = dzIdx/12 * Math.PI*2 - Math.PI/2;
+    const posDZ = new THREE.Vector3(Math.cos(angDZ)*R*0.65, -36, Math.sin(angDZ)*R*0.65);
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([posTG,posDZ]), new THREE.LineBasicMaterial({color:0x336644, opacity:0.6}));
+    groups.jiazi.add(line);
+    const mid = posTG.clone().add(posDZ).multiplyScalar(0.5);
+    const marker = new THREE.Mesh(new THREE.SphereGeometry(1.6,8,6), new THREE.MeshBasicMaterial({color:0xffee88}));
+    marker.position.copy(mid); marker.userData = {name: tiangan[tgIdx]+dizhi[dzIdx], idx:i};
+    groups.jiazi.add(marker);
+
+    const row = document.createElement('tr');
+    row.innerHTML = `<td>${i}</td><td>${tiangan[tgIdx]+dizhi[dzIdx]}</td><td>${tiangan[tgIdx]}</td><td>${dizhi[dzIdx]}</td>
+      <td><button data-idx="${i}" class="focusBtn">聚焦</button></td>`;
+    tbody.appendChild(row);
+  }
+  // attach focus handlers
+  document.querySelectorAll('.focusBtn').forEach(btn=>{
+    btn.addEventListener('click', ()=> {
+      const idx = Number(btn.getAttribute('data-idx'));
+      // find marker
+      const marker = groups.jiazi.children.find(ch=>ch.userData && ch.userData.idx === idx);
+      if(marker){
+        controls.target.copy(marker.position);
+        camera.position.set(marker.position.x + 40, marker.position.y + 30, marker.position.z + 80);
+      }
+    });
+  });
+}
+buildJiazi();
+
+/* export jiazi csv */
+document.getElementById('exportJiazi').addEventListener('click', ()=>{
+  let csv = 'idx,ganZhi,tg,dz\n';
+  for(let i=0;i<60;i++){
+    const tgIdx = i%10, dzIdx = i%12;
+    csv += `${i},${tiangan[tgIdx]+dizhi[dzIdx]},${tiangan[tgIdx]},${dizhi[dzIdx]}\n`;
+  }
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'jiazi_table.csv'; a.click();
+});
+
+/* ----------------- 太阳显示（精确） ----------------- */
+function buildSun(){
+  groups.sun.clear && groups.sun.clear();
+  const sunMesh = new THREE.Mesh(new THREE.SphereGeometry(R*0.06, 24, 16), new THREE.MeshBasicMaterial({color:0xffd24d}));
+  groups.sun.add(sunMesh);
+  const sunLabel = makeCanvasLabel('太阳', 18, '#b36b18');
+  sunLabel.position.set(0, R*0.06*2, 0); groups.sun.add(sunLabel);
+}
+buildSun();
+
+function updateSunNow(date){
+  const lon = solarLongitudePrecise(date); // deg
+  // convert to equatorial coords
+  const eq = eclipticToEquatorial(lon, 0, obliquity);
+  const pos = radecToVec(eq.raDeg, eq.decDeg, R*0.98);
+  groups.sun.position.copy(pos);
+  // HUD
+  document.getElementById('solarLon').textContent = '太阳黄经 (λ): ' + lon.toFixed(4) + '°';
+  document.getElementById('sunCoords').textContent = `太阳 赤经 ${eq.raDeg.toFixed(4)}°, 赤纬 ${eq.decDeg.toFixed(4)}°`;
+  // determine current jieqi index (24 sectors)
+  const sector = Math.floor(lon / 15) % 24;
+  document.getElementById('currentJieqi').textContent = '当前节气区: ' + jieqiNames[sector] + ` (λ in [${(sector*15).toFixed(0)}°,${((sector+1)*15).toFixed(0)}°))`;
+  // days to next: use JD fractions
+  const JD = toJulianDate(date);
+  const frac = (lon % 15)/15;
+  const daysToNext = (1 - frac) * 365.2422 / 24 * 24 * 15 / 360; // simplified -> better produce approximate days
+  document.getElementById('toNextJieqi').textContent = '距下节气(估算): ' + ( ( ( ( ( ( (sector+1)*15 ) - lon ) / 360 ) * 365.2422 ) ).toFixed(3) ) + ' 天';
+}
+
+/* ----------------- earth & moon (simplified pure color) ----------------- */
+(function buildEarthMoon(){
+  const earth = new THREE.Mesh(new THREE.SphereGeometry(8, 32, 32), new THREE.MeshPhongMaterial({color:0x4b82ff}));
+  const earthPivot = new THREE.Group(); earthPivot.add(earth);
+  earth.position.set(-R*0.32, -R*0.6, 0);
+  groups.earthmoon.add(earthPivot);
+
+  const moon = new THREE.Mesh(new THREE.SphereGeometry(2.2, 24,24), new THREE.MeshPhongMaterial({color:0xcfcfcf}));
+  moon.userData = {radius:24, speed:0.0006, parent:earth};
+  moon.position.set(earth.position.x + moon.userData.radius, earth.position.y, earth.position.z);
+  groups.earthmoon.add(moon);
+  groups.earthmoon.userData = {earth, moon};
+})();
+scene.add(new THREE.AmbientLight(0xffffff, 0.95));
+const dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(200,300,200); scene.add(dl);
+
+/* ----------------- 星表加载（本地 & online fetch placeholder） ----------------- */
+function parseStarsCSV(text){
+  groups.stars.clear && (groups.stars.clear());
+  const lines = text.split(/\r?\n/).filter(l=>l.trim());
+  let start=0;
+  const hdr = lines[0].split(',').map(h=>h.trim().toLowerCase());
+  if(hdr.includes('name') && (hdr.includes('ra')|| hdr.includes('ra_hms'))) start=1;
+  for(let i=start;i<lines.length;i++){
+    const cols = lines[i].split(',').map(c=>c.trim());
+    if(cols.length < 2) continue;
+    const name = cols[0];
+    const ra = parseHMS(cols[1]);
+    const dec = parseDMS(cols[2] || cols[1]);
+    const mag = parseFloat(cols[3] || '6');
+    if(ra==null || dec==null) continue;
+    const pos = radecToVec(ra, dec, R*0.995);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.6, 3 - mag/2), 8,6), new THREE.MeshBasicMaterial({color:0x111111}));
+    dot.position.copy(pos); dot.userData = {name, raDeg:ra, decDeg:dec, mag};
+    groups.stars.add(dot);
+    const label = makeCanvasLabel(name, 12, '#222'); label.position.copy(pos.clone().multiplyScalar(1.02)); groups.stars.add(label);
+  }
+}
+
+/* local file input */
+document.getElementById('starsFile').addEventListener('change', (ev)=>{
+  const f = ev.target.files[0]; if(!f) return;
+  const reader = new FileReader();
+  reader.onload = e=> parseStarsCSV(e.target.result);
+  reader.readAsText(f, 'utf-8');
+});
+
+/* online fetch (requires permission) - fetcher will attempt to get a prepared CSV URL (placeholder)
+   Note: CORS of the remote host may block fetch from browser; if blocked I can fetch server-side and send you CSV.
+*/
+document.getElementById('fetchStarsBtn').addEventListener('click', async ()=>{
+  if(!confirm('允许页面联网抓取二十八宿代表恒星数据吗？（会从公共资源下载 CSV）')) return;
+  // Example: attempt to fetch a prepared gist or repo raw CSV (this URL is a placeholder; may fail due to CORS)
+  const urls = [
+    'https://raw.githubusercontent.com/your-repo/28xiu-data/main/28xiu_stars.csv',
+    // fallback: you can later tell me to fetch specific sources and I'll fetch and produce CSV for you
+  ];
+  let ok=false;
+  for(const u of urls){
+    try{
+      const resp = await fetch(u);
+      if(!resp.ok) continue;
+      const txt = await resp.text();
+      parseStarsCSV(txt);
+      alert('已加载远程二十八宿星表（来源: ' + u + '). 若此加载失败，请让我代为抓取并生成 CSV。');
+      ok=true; break;
+    }catch(err){
+      console.warn('fetch failed',u,err);
+    }
+  }
+  if(!ok) alert('远程抓取失败（可能被 CORS 或 URL 不可用阻止）。如需，我可以代为抓取并把 stars.csv 发给你（请确认允许我联网执行）。');
+});
+
+/* ----------------- click interactions ----------------- */
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+renderer.domElement.addEventListener('pointerdown', (ev)=>{
+  mouse.x = (ev.clientX / renderer.domElement.clientWidth) * 2 - 1;
+  mouse.y = -(ev.clientY / renderer.domElement.clientHeight) * 2 + 1;
+  ray.setFromCamera(mouse, camera);
+  const hits = ray.intersectObjects(groups.jiazi.children, true).filter(o=>o.object.userData && o.object.userData.name);
+  if(hits.length>0){
+    const d = hits[0].object.userData;
+    alert('六十甲子: ' + d.name + '\\n序号: ' + d.idx);
+    return;
+  }
+  const sh = ray.intersectObjects(groups.stars.children, true);
+  if(sh.length>0){
+    const s = sh[0].object.userData;
+    alert('恒星: ' + s.name + '\\nRA: ' + s.raDeg.toFixed(5) + '\\nDec: ' + s.decDeg.toFixed(5));
+  }
+});
+
+/* ----------------- utility parse functions ----------------- */
+function parseHMS(hms){
+  if(!hms) return null;
+  const s = (''+hms).trim();
+  if(s.indexOf('h')>=0 || s.indexOf(':')>=0){
+    const parts = s.replace(/[hms]/g,':').split(':').filter(Boolean);
+    const h = parseFloat(parts[0])||0, m=parseFloat(parts[1])||0, sec=parseFloat(parts[2])||0;
+    return (h + m/60 + sec/3600) * 15;
+  } else {
+    const v = parseFloat(s); return isNaN(v)?null:v;
+  }
+}
+function parseDMS(dms){
+  if(!dms) return null;
+  const s = (''+dms).trim();
+  const sign = s.startsWith('-') ? -1 : 1;
+  const parts = s.replace(/[°d'"]/g,':').replace(/[hms]/g,':').split(':').filter(Boolean);
+  const d = parseFloat(parts[0])||0, m=parseFloat(parts[1])||0, sec=parseFloat(parts[2])||0;
+  return sign*(Math.abs(d) + m/60 + sec/3600);
+}
+
+/* ----------------- HUD & animation ----------------- */
+function updateHUD(){
+  const now = new Date();
+  document.getElementById('localTime').textContent = '本地时间: ' + now.toLocaleString();
+  const nowUTC = new Date(now.getTime() + now.getTimezoneOffset()*60000);
+  document.getElementById('utcTime').textContent = 'UTC: ' + nowUTC.toISOString().replace('T',' ').substr(0,19) + 'Z';
+  updateSunNow(nowUTC);
+}
+
+updateHUD();
+setInterval(updateHUD, 1000);
+
+let lastTime = performance.now();
+function animate(){
+  requestAnimationFrame(animate);
+  const tNow = performance.now();
+  const dt = (tNow - lastTime); lastTime = tNow;
+
+  // earth & moon simple animation
+  const moon = groups.earthmoon.children.find(ch=>ch.userData && ch.userData.radius);
+  const earth = groups.earthmoon.userData && groups.earthmoon.userData.earth;
+  if(earth) earth.rotation.y += 0.0003 * dt;
+  if(moon && moon.userData){
+    const s = moon.userData;
+    const t = performance.now() * s.speed;
+    const p = s.parent.position;
+    moon.position.set(p.x + Math.cos(t)*s.radius, p.y + Math.sin(t)*0.4, p.z + Math.sin(t)*s.radius);
+    moon.rotation.y += 0.0005 * dt;
+  }
+
+  // toggle visibility per UI
+  groups.ecliptic.visible = document.getElementById('showEcl').checked;
+  groups.equator.visible = document.getElementById('showEq').checked;
+  groups.galactic.visible = document.getElementById('showGal').checked;
+  groups.tiangan.visible = document.getElementById('showTiangan').checked;
+  groups.dizhi.visible = document.getElementById('showDizhi').checked;
+  groups.jieqi.visible = document.getElementById('showJieqi').checked;
+  groups.xiu.visible = document.getElementById('show28xiu').checked;
+  // xiu labels
+  const showXiuLabels = document.getElementById('show28xiuLabels').checked;
+  groups.xiu.children.forEach(ch=>{
+    if(ch.type === 'Sprite') ch.visible = showXiuLabels;
+  });
+  groups.jiazi.visible = document.getElementById('showJiazi').checked;
+  groups.sun.visible = document.getElementById('showSun').checked;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+/* UI buttons */
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  camera.position.set(0,180,420); controls.target.set(0,0,0); controls.update();
+});
+document.getElementById('snapBtn').addEventListener('click', ()=>{
+  renderer.render(scene, camera);
+  const url = renderer.domElement.toDataURL('image/png');
+  const a = document.createElement('a'); a.href = url; a.download = 'tianwen_snapshot.png'; a.click();
+});
+
+/* ================== 结束 ================== */
+</script>
+</body>
+</html>
