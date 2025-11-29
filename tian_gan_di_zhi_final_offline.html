@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<title>天干·地支·节气 · 专业离线（带地月纯色 & 二十八宿）</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>
+  html,body{height:100%;margin:0;background:#030317;color:#e6eef8;font-family:Arial,Helvetica,sans-serif}
+  #ui{position:absolute;left:12px;top:12px;width:340px;z-index:30;background:rgba(2,6,20,0.78);padding:12px;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,0.6)}
+  #ui h3{margin:0 0 8px 0;font-size:16px}
+  #ui label{display:block;margin:6px 0;font-size:13px;color:#cfe}
+  .btn{background:#2b6cff;color:#fff;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;margin-right:6px}
+  .small{font-size:12px;color:#bcd;margin-top:6px}
+  #hud{position:absolute;right:12px;top:12px;z-index:30;background:rgba(0,0,0,0.45);padding:10px;border-radius:8px;color:#fff;font-size:13px}
+  #credits{position:absolute;right:12px;bottom:12px;color:#9fb;background:rgba(0,0,0,0.28);padding:8px;border-radius:6px;font-size:12px}
+  .toggle-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  input[type=file]{color:#fff}
+</style>
+</head>
+<body>
+<div id="ui">
+  <h3>天干·地支·节气（最终离线版）</h3>
+
+  <div>
+    <label><input type="checkbox" id="showEcliptic" checked> 显示黄道</label>
+    <label><input type="checkbox" id="showEquator" checked> 显示天球赤道</label>
+    <label><input type="checkbox" id="showGalactic"> 显示银河平面（示意）</label>
+  </div>
+
+  <div style="margin-top:6px">
+    <label class="toggle-row"><input id="showTiangan" type="checkbox" checked> 天干(10)</label>
+    <label class="toggle-row"><input id="showDizhi" type="checkbox" checked> 地支(12)</label>
+  </div>
+
+  <div style="margin-top:6px">
+    <label><input id="showJieqi" type="checkbox" checked> 显示二十四节气（并显示今天指示）</label>
+    <label><input id="show28xiu" type="checkbox" checked> 显示二十八宿带</label>
+    <label style="margin-left:14px"><input id="show28xiuLabels" type="checkbox" checked> 显示二十八宿标签</label>
+  </div>
+
+  <label style="margin-top:6px"><input id="showJiazi" type="checkbox" checked> 显示60甲子连线（点击标记查看）</label>
+
+  <div style="margin-top:10px">
+    <button id="resetView" class="btn">重置视角</button>
+    <button id="screenshot" class="btn">导出 PNG</button>
+  </div>
+
+  <label style="margin-top:10px">加载本地星表 CSV（可选）：
+    <input id="fileInput" type="file" accept=".csv" />
+    <div class="small">CSV 列头示例：name,ra_hms,dec_dms,mag （RA like 13:25:11.6 or 13h25m11.6s）</div>
+  </label>
+
+  <div class="small" style="margin-top:8px">说明：太阳黄经采用线性近似（以当年3月20日为春分 0°）。地球/月球为纯色球体（简化）。</div>
+</div>
+
+<div id="hud">
+  <div id="localTime">本地时间: —</div>
+  <div id="utcTime">UTC: —</div>
+  <div id="solarLon">太阳黄经: —</div>
+  <div id="currentJieqi">当前节气: —</div>
+  <div id="toNextJieqi">距下节气: —</div>
+  <div id="ganzhi">当前年柱等（简略）: —</div>
+</div>
+
+<div id="credits">离线版 · 准备 three.min.js + OrbitControls.js（非 module UMD）同目录</div>
+
+<!-- 本地 three + OrbitControls（非 module / UMD 版） -->
+<script src="./three.min.js"></script>
+<script src="./OrbitControls.js"></script>
+
+<script>
+/* -------------------- 场景基础 -------------------- */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x030317);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 4000);
+camera.position.set(0, 140, 360);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio || 1);
+document.body.appendChild(renderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+/* groups */
+const eclipticGroup = new THREE.Group(); scene.add(eclipticGroup);
+const equatorGroup  = new THREE.Group(); scene.add(equatorGroup);
+const galacticGroup = new THREE.Group(); scene.add(galacticGroup);
+const tgGroup = new THREE.Group(); scene.add(tgGroup);
+const dzGroup = new THREE.Group(); scene.add(dzGroup);
+const jqGroup = new THREE.Group(); scene.add(jqGroup);
+const xiuGroup = new THREE.Group(); scene.add(xiuGroup);
+const jiaziGroup = new THREE.Group(); scene.add(jiaziGroup);
+const starGroup = new THREE.Group(); scene.add(starGroup);
+const indicatorGroup = new THREE.Group(); scene.add(indicatorGroup);
+
+/* constants */
+const R = 140;
+const tilt = 23.439281 * Math.PI/180;
+
+/* label helper */
+function makeLabelSprite(text, fontsize=36, color="#fff", w=512, h=256){
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = color;
+  ctx.font = fontsize + "px sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(text, w/2, h/2);
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({map:tex, transparent:true});
+  const sp = new THREE.Sprite(mat);
+  sp.scale.set(fontsize*0.5, fontsize*0.25, 1);
+  return sp;
+}
+
+/* RA/Dec conversion */
+function radecToCartesian(raDeg, decDeg, radius=R){
+  const ra = raDeg * Math.PI/180;
+  const dec = decDeg * Math.PI/180;
+  const x = radius * Math.cos(dec) * Math.cos(ra);
+  const y = radius * Math.sin(dec);
+  const z = radius * Math.cos(dec) * Math.sin(ra);
+  return new THREE.Vector3(x,y,z);
+}
+/* parse hms/dms */
+function parseHMS(hms){ if(!hms) return null; const s=(''+hms).trim(); if(s.includes('h')||s.includes(':')){ const parts = s.replace(/[hms]/g,':').split(':').filter(Boolean); const h=parseFloat(parts[0])||0; const m=parseFloat(parts[1])||0; const sec=parseFloat(parts[2])||0; return (h + m/60 + sec/3600) * 15; } const v=parseFloat(s); return isNaN(v)?null:v; }
+function parseDMS(dms){ if(!dms) return null; const s=(''+dms).trim(); const sign = s.startsWith('-')?-1:1; const p = s.replace(/[°d'"]/g,':').replace(/[hms]/g,':').split(':').filter(Boolean); const d=parseFloat(p[0])||0; const m=parseFloat(p[1])||0; const sec=parseFloat(p[2])||0; return sign * (Math.abs(d) + m/60 + sec/3600); }
+
+/* draw sky sphere wire */
+(function(){
+  const geo = new THREE.SphereGeometry(R, 64, 32);
+  const mat = new THREE.MeshBasicMaterial({color:0x061026, wireframe:true, opacity:0.06, transparent:true});
+  const mesh = new THREE.Mesh(geo, mat); scene.add(mesh);
+})();
+
+/* equator (single ring) */
+(function buildEquator(){
+  const geo = new THREE.RingGeometry(R-1.5, R+1.5, 360);
+  const mat = new THREE.MeshBasicMaterial({color:0x2aa6ff, side:THREE.DoubleSide, transparent:true, opacity:0.6});
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = Math.PI/2;
+  equatorGroup.add(mesh);
+})();
+
+/* ecliptic ring (tilted) */
+(function buildEcliptic(){
+  const pts=[];
+  for(let L=0;L<360;L+=1){
+    const lon = L * Math.PI/180;
+    const x = Math.cos(lon);
+    const y = Math.sin(lon)*Math.cos(tilt);
+    const z = Math.sin(lon)*Math.sin(tilt);
+    pts.push(new THREE.Vector3(x*R,y*R,z*R));
+  }
+  const geom = new THREE.BufferGeometry().setFromPoints(pts);
+  const mat = new THREE.LineDashedMaterial({color:0xffbb55, dashSize:3, gapSize:2, linewidth:1});
+  const line = new THREE.Line(geom, mat); line.computeLineDistances();
+  eclipticGroup.add(line);
+})();
+
+/* galactic plane (illustrative) */
+(function buildGalactic(){
+  const tiltG = 60 * Math.PI/180;
+  const pts=[];
+  for(let L=0;L<360;L+=1){
+    const lon = L * Math.PI/180;
+    const x = Math.cos(lon);
+    const y = Math.sin(lon)*Math.cos(tiltG);
+    const z = Math.sin(lon)*Math.sin(tiltG);
+    pts.push(new THREE.Vector3(x*R,y*R,z*R));
+  }
+  const geom = new THREE.BufferGeometry().setFromPoints(pts);
+  const line = new THREE.Line(geom, new THREE.LineBasicMaterial({color:0x9f8fff, opacity:0.28}));
+  galacticGroup.add(line);
+})();
+galacticGroup.visible = false;
+
+/* 24 jieqi on ecliptic -> convert to eq coords */
+const jieqiNames = [
+ '立春','雨水','惊蛰','春分','清明','谷雨',
+ '立夏','小满','芒种','夏至','小暑','大暑',
+ '立秋','处暑','白露','秋分','寒露','霜降',
+ '立冬','小雪','大雪','冬至','小寒','大寒'
+];
+(function buildJieqi(){
+  const r = R*0.92;
+  for(let i=0;i<24;i++){
+    const ang = i/24 * Math.PI*2;
+    const x = Math.cos(ang);
+    const y = Math.sin(ang) * Math.cos(tilt);
+    const z = Math.sin(ang) * Math.sin(tilt);
+    const pos = new THREE.Vector3(x*r,y*r,z*r);
+    const sp = makeLabelSprite(jieqiNames[i], 24, "#ffd38a");
+    sp.position.copy(pos);
+    jqGroup.add(sp);
+  }
+})();
+
+/* solar longitude approx: map date to angle using March 20 as 0° */
+function solarLongitudeApproxUTC(date){
+  const year = date.getUTCFullYear();
+  const equinox = Date.UTC(year,2,20,0,0,0); // Mar 20 UTC approx
+  const days = (date.getTime() - equinox) / 86400000;
+  const daysInYear = 365.2422;
+  let frac = (days / daysInYear);
+  frac = frac - Math.floor(frac);
+  let lon = frac * 360;
+  if(lon<0) lon += 360;
+  return lon;
+}
+
+/* sun indicator */
+let sunGroup = new THREE.Group(); indicatorGroup.add(sunGroup);
+function updateSunIndicator(nowDate){
+  sunGroup.clear && (sunGroup.clear());
+  const lonDeg = solarLongitudeApproxUTC(nowDate);
+  const lon = lonDeg * Math.PI/180;
+  const x = Math.cos(lon);
+  const y = Math.sin(lon)*Math.cos(tilt);
+  const z = Math.sin(lon)*Math.sin(tilt);
+  const pos = new THREE.Vector3(x*R*0.985, y*R*0.985, z*R*0.985);
+  const sun = new THREE.Mesh(new THREE.SphereGeometry(4.8,12,8), new THREE.MeshBasicMaterial({color:0xffd24d}));
+  sun.position.copy(pos); sunGroup.add(sun);
+  const lab = makeLabelSprite('太阳 ~' + lonDeg.toFixed(1)+'°', 18, '#ffd24d');
+  lab.position.copy(pos.clone().multiplyScalar(1.08));
+  sunGroup.add(lab);
+  // radial line
+  const ln = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), pos]);
+  sunGroup.add(new THREE.Line(ln, new THREE.LineBasicMaterial({color:0xffd24d, opacity:0.6})));
+}
+
+/* 10 tg and 12 dz rings */
+const tiangan = ["甲","乙","丙","丁","戊","己","庚","辛","壬","癸"];
+const dizhi = ["子","丑","寅","卯","辰","巳","午","未","申","酉","戌","亥"];
+(function buildTG_DZ(){
+  const r1 = R*0.45, r2 = R*0.65;
+  tiangan.forEach((t,i)=>{
+    const ang = i/10 * Math.PI*2 - Math.PI/2;
+    const sp = makeLabelSprite(t, 36, "#8fffb3");
+    sp.position.set(Math.cos(ang)*r1, -22, Math.sin(ang)*r1);
+    tgGroup.add(sp);
+  });
+  dizhi.forEach((d,i)=>{
+    const ang = i/12 * Math.PI*2 - Math.PI/2;
+    const sp = makeLabelSprite(d, 32, "#8fbffd");
+    sp.position.set(Math.cos(ang)*r2, -32, Math.sin(ang)*r2);
+    dzGroup.add(sp);
+  });
+})();
+
+/* 28 xiu band (labels optional) */
+const xiuNames = ["角","亢","氐","房","心","尾","箕","斗","牛","女","虚","危","室","壁","奎","娄","胃","昴","毕","觜","参","井","鬼","柳","星","张","翼","轸"];
+(function build28xiu(){
+  const r = R*0.98;
+  for(let i=0;i<28;i++){
+    const ang = i/28 * Math.PI*2;
+    const x = Math.cos(ang), y = Math.sin(ang)*Math.cos(tilt), z = Math.sin(ang)*Math.sin(tilt);
+    const pos = new THREE.Vector3(x*r,y*r,z*r);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(1.7,8,6), new THREE.MeshBasicMaterial({color:0xffdd88}));
+    dot.position.copy(pos); xiuGroup.add(dot);
+    const label = makeLabelSprite(xiuNames[i], 18, "#ffccaa");
+    label.position.copy(pos.clone().multiplyScalar(1.02));
+    label.name = 'xiuLabel'+i;
+    xiuGroup.add(label);
+  }
+})();
+
+/* 60 jiazi lines & markers */
+(function buildJiazi(){
+  const combos = [];
+  for(let i=0;i<60;i++){
+    combos.push({idx:i, tgIdx:i%10, dzIdx:i%12});
+  }
+  combos.forEach(c=>{
+    const angTG = c.tgIdx/10 * Math.PI*2 - Math.PI/2;
+    const posTG = new THREE.Vector3(Math.cos(angTG)*R*0.45, -22, Math.sin(angTG)*R*0.45);
+    const angDZ = c.dzIdx/12 * Math.PI*2 - Math.PI/2;
+    const posDZ = new THREE.Vector3(Math.cos(angDZ)*R*0.65, -32, Math.sin(angDZ)*R*0.65);
+    const lineGeom = new THREE.BufferGeometry().setFromPoints([posTG, posDZ]);
+    const line = new THREE.Line(lineGeom, new THREE.LineBasicMaterial({color:0x88ffbb, opacity:0.45}));
+    jiaziGroup.add(line);
+    const mid = posTG.clone().add(posDZ).multiplyScalar(0.5);
+    const sph = new THREE.Mesh(new THREE.SphereGeometry(1.8,8,6), new THREE.MeshBasicMaterial({color:0xffff88}));
+    sph.position.copy(mid); sph.userData = {name: tiangan[c.tgIdx] + dizhi[c.dzIdx], idx:c.idx};
+    jiaziGroup.add(sph);
+    const lab = makeLabelSprite(tiangan[c.tgIdx]+dizhi[c.dzIdx], 12, "#ffeeaa");
+    lab.position.copy(mid.clone().add(new THREE.Vector3(0,6,0)));
+    jiaziGroup.add(lab);
+  });
+})();
+
+/* simple pure-color Earth & Moon */
+const earthGroup = new THREE.Group(); scene.add(earthGroup);
+(function buildEarthMoon(){
+  const earthMat = new THREE.MeshPhongMaterial({color:0x3a8bff, shininess:5});
+  const earth = new THREE.Mesh(new THREE.SphereGeometry(8, 32, 32), earthMat);
+  earthGroup.add(earth);
+  earth.position.set(-R*0.28, -R*0.55, 0);
+
+  const moonMat = new THREE.MeshPhongMaterial({color:0xbdbdbd});
+  const moon = new THREE.Mesh(new THREE.SphereGeometry(2.2, 24, 24), moonMat);
+  moon.userData = {orbitalRadius: 24, speed: 0.0006};
+  moon.position.set(earth.position.x + moon.userData.orbitalRadius, earth.position.y, earth.position.z);
+  earthGroup.add(moon);
+  earth.userData = {mesh: earth};
+  moon.userData.parentEarth = earth;
+})();
+
+/* lights */
+scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+dirLight.position.set(100,200,100); scene.add(dirLight);
+
+/* interaction: click jiazi markers and stars */
+const ray = new THREE.Raycaster(); const mouse = new THREE.Vector2();
+renderer.domElement.addEventListener('pointerdown', (ev)=>{
+  mouse.x = (ev.clientX / renderer.domElement.clientWidth) * 2 - 1;
+  mouse.y = -(ev.clientY / renderer.domElement.clientHeight) * 2 + 1;
+  ray.setFromCamera(mouse, camera);
+  const hits = ray.intersectObjects(jiaziGroup.children, true).filter(o=>o.object.userData && o.object.userData.name);
+  if(hits.length>0){
+    const d = hits[0].object.userData;
+    alert('六十甲子：' + d.name + '\\n序号 (0=甲子): ' + d.idx);
+    return;
+  }
+  const shots = ray.intersectObjects(starGroup.children, true);
+  if(shots.length>0){
+    const s = shots[0].object;
+    if(s.userData && s.userData.name){
+      alert('恒星: ' + s.userData.name + '\\nRA: ' + (s.userData.raDeg||'—') + '\\nDec: ' + (s.userData.decDeg||'—') );
+    }
+  }
+});
+
+/* load CSV */
+document.getElementById('fileInput').addEventListener('change', (ev)=>{
+  const f = ev.target.files[0]; if(!f) return;
+  const reader = new FileReader();
+  reader.onload = (e)=> parseCSVStars(e.target.result);
+  reader.readAsText(f, 'utf-8');
+});
+function parseCSVStars(txt){
+  // minimal CSV parsing
+  starGroup.clear && (starGroup.clear());
+  const lines = txt.split(/\\r?\\n/).filter(Boolean);
+  let start = 0;
+  const hdr = lines[0].split(',').map(h=>h.trim().toLowerCase());
+  if(hdr.includes('name') && (hdr.includes('ra')||hdr.includes('ra_hms'))) start = 1;
+  for(let i=start;i<lines.length;i++){
+    const cols = lines[i].split(',').map(c=>c.trim());
+    if(cols.length < 2) continue;
+    const name = cols[0];
+    const ra = parseHMS(cols[1]);
+    const dec = parseDMS(cols[2]||cols[1]);
+    const mag = parseFloat(cols[3]||'6');
+    if(ra==null || dec==null) continue;
+    const pos = radecToCartesian(ra, dec, R*0.995);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.6, 3 - mag/2), 8,6), new THREE.MeshBasicMaterial({color:0xffffff}));
+    dot.position.copy(pos); dot.userData = {name, raDeg:ra, decDeg:dec, mag};
+    starGroup.add(dot);
+    const lab = makeLabelSprite(name, 12, '#fff'); lab.position.copy(pos.clone().multiplyScalar(1.02));
+    starGroup.add(lab);
+  }
+}
+
+/* HUD update (time, solar lon, current jieqi, to next) */
+function getJieqiIndexByLon(lonDeg){
+  // each jieqi spans 15°, starting at 0°=立春? (we use mapping where 0° = 春分 as implemented earlier)
+  // Our jq array index maps to equally spaced longitudes around ecliptic; find nearest preceding index
+  const sector = Math.floor((lonDeg / 360) * 24) % 24;
+  return (sector + 24) % 24;
+}
+function updateHUD(){
+  const now = new Date();
+  const nowUTC = new Date(now.getTime() + now.getTimezoneOffset()*60000);
+  document.getElementById('localTime').textContent = '本地时间: ' + now.toLocaleString();
+  document.getElementById('utcTime').textContent = 'UTC: ' + nowUTC.toISOString().replace('T',' ').substr(0,19) + 'Z';
+  const lon = solarLongitudeApproxUTC(nowUTC);
+  document.getElementById('solarLon').textContent = '太阳黄经(近似): ' + lon.toFixed(2) + '°';
+  const idx = getJieqiIndexByLon(lon);
+  document.getElementById('currentJieqi').textContent = '当前节气区: ' + jieqiNames[idx] + ' (idx ' + idx + ')';
+  // compute next jieqi date approx: linear mapping to days
+  const year = nowUTC.getUTCFullYear();
+  const equinox = Date.UTC(year,2,20,0,0,0);
+  const daysInYear = 365.2422;
+  const frac = lon / 360;
+  const daysSinceEquinox = frac * daysInYear;
+  const currentDay = equinox + daysSinceEquinox * 86400000;
+  // next sector boundary:
+  const nextLon = ((idx+1)/24)*360;
+  let dFrac = (nextLon - lon) / 360;
+  if(dFrac < 0) dFrac += 1;
+  const daysToNext = dFrac * daysInYear;
+  document.getElementById('toNextJieqi').textContent = '距下节气大约: ' + daysToNext.toFixed(2) + ' 天';
+  // simple Ganzhi year (approx): use year mod 60 mapping starting 1984=甲子 year? We'll show simple placeholder
+  document.getElementById('ganzhi').textContent = '年柱 (示例): ' + simpleGanzhiYear(nowUTC.getUTCFullYear());
+}
+/* simple Ganzhi compute (approx): assume 1984 is 甲子 start (1984-02-04 is甲子) - this is illustrative */
+function simpleGanzhiYear(year){
+  const base = 1984; // 甲子年 baseline
+  const idx = (year - base) % 60;
+  const tg = ["甲","乙","丙","丁","戊","己","庚","辛","壬","癸"];
+  const dz = ["子","丑","寅","卯","辰","巳","午","未","申","酉","戌","亥"];
+  const t = tg[( (idx%10)+10)%10];
+  const d = dz[( (idx%12)+12)%12];
+  return t + d;
+}
+
+/* update sun indicator periodically */
+updateSunIndicator(new Date());
+updateHUD();
+setInterval(()=>{
+  updateSunIndicator(new Date());
+  updateHUD();
+}, 1000);
+
+/* UI wiring */
+document.getElementById('showEcliptic').addEventListener('change', e=> eclipticGroup.visible = e.target.checked );
+document.getElementById('showEquator').addEventListener('change', e=> equatorGroup.visible = e.target.checked );
+document.getElementById('showGalactic').addEventListener('change', e=> galacticGroup.visible = e.target.checked );
+document.getElementById('showTiangan').addEventListener('change', e=> tgGroup.visible = e.target.checked );
+document.getElementById('showDizhi').addEventListener('change', e=> dzGroup.visible = e.target.checked );
+document.getElementById('showJieqi').addEventListener('change', e=> jqGroup.visible = e.target.checked );
+document.getElementById('show28xiu').addEventListener('change', e=> xiuGroup.visible = e.target.checked );
+document.getElementById('show28xiuLabels').addEventListener('change', e=>{
+  const visible = e.target.checked;
+  xiuGroup.children.forEach(ch=>{
+    if(ch.material || ch.type === 'Sprite') ch.visible = visible;
+  });
+});
+document.getElementById('showJiazi').addEventListener('change', e=> jiaziGroup.visible = e.target.checked );
+
+document.getElementById('resetView').addEventListener('click', ()=>{
+  camera.position.set(0,140,360); controls.target.set(0,0,0);
+  controls.update();
+});
+document.getElementById('screenshot').addEventListener('click', ()=>{
+  renderer.render(scene, camera);
+  const data = renderer.domElement.toDataURL('image/png');
+  const a = document.createElement('a'); a.href = data; a.download = 'tianwen_snapshot.png'; a.click();
+});
+
+/* animate earth/moon & render loop */
+const moonObj = (()=>{ for(const ch of earthGroup.children) if(ch.geometry && ch.geometry.type === 'SphereGeometry' && ch.geometry.parameters.radius<5) return ch; return null; })();
+const earthObj = (()=>{ for(const ch of earthGroup.children) if(ch.geometry && ch.geometry.type === 'SphereGeometry' && ch.geometry.parameters.radius>=5) return ch; return null; })();
+
+let last = performance.now();
+function animate(){
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = now - last;
+  last = now;
+  // earth rotate
+  if(earthObj) earthObj.rotation.y += 0.0005 * dt;
+  // moon orbit around earth
+  if(moonObj && moonObj.userData){
+    const t = now * moonObj.userData.speed;
+    const r = moonObj.userData.orbitalRadius;
+    const p = moonObj.userData.parentEarth.position;
+    moonObj.position.set(p.x + Math.cos(t)*r, p.y + Math.sin(t)*0.6, p.z + Math.sin(t)*r);
+    moonObj.rotation.y += 0.001 * dt;
+  }
+  // subtle ring rotation for visual
+  tgGroup.rotation.y += 0.0005;
+  dzGroup.rotation.y -= 0.0003;
+  jqGroup.rotation.y += 0.00015;
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+/* resize */
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* utility: makeLabelSprite accessible earlier */
+function makeLabelSprite(text, size, color){ return makeLabelSpriteImpl(text,size,color); }
+/* because earlier makeLabelSprite defined inside, avoid confusion; implement small wrapper */
+function makeLabelSpriteImpl(text, fontsize, color){
+  const canvas = document.createElement("canvas");
+  canvas.width = 256; canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = color || "#fff";
+  ctx.font = (fontsize||18) + "px sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(text, canvas.width/2, canvas.height/2);
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({map:tex, transparent:true});
+  const sp = new THREE.Sprite(mat);
+  sp.scale.set((fontsize||18)*0.6, (fontsize||18)*0.28, 1);
+  return sp;
+}
+
+/* solarLongitudeApproxUTC helper (re-declare here to ensure scope) */
+function solarLongitudeApproxUTC(date){
+  const year = date.getUTCFullYear();
+  const equinox = Date.UTC(year,2,20,0,0,0);
+  const days = (date.getTime() - equinox) / 86400000;
+  const daysInYear = 365.2422;
+  let frac = (days / daysInYear);
+  frac = frac - Math.floor(frac);
+  let lon = frac * 360;
+  if(lon<0) lon += 360;
+  return lon;
+}
+
+/* quick helpers parse reused inside parseCSVStars (redeclare for safety) */
+function parseHMS(s){
+  if(!s) return null;
+  if((''+s).indexOf(':')>=0 || (''+s).indexOf('h')>=0){
+    const parts = (''+s).replace(/[hms]/g,':').split(':').filter(Boolean);
+    const h=parseFloat(parts[0])||0; const m=parseFloat(parts[1])||0; const sec=parseFloat(parts[2])||0;
+    return (h + m/60 + sec/3600) * 15;
+  }
+  const v=parseFloat(s); return isNaN(v)?null:v;
+}
+function parseDMS(s){
+  if(!s) return null;
+  const sign = (''+s).trim().startsWith('-')?-1:1;
+  const parts = (''+s).replace(/[°d'"]/g,':').replace(/[hms]/g,':').split(':').filter(Boolean);
+  const d=parseFloat(parts[0])||0; const m=parseFloat(parts[1])||0; const sec=parseFloat(parts[2])||0;
+  return sign*(Math.abs(d) + m/60 + sec/3600);
+}
+
+/* done */
+</script>
+</body>
+</html>
