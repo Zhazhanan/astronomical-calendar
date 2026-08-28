@@ -64,9 +64,9 @@
   <label style="margin-left:16px"><input id="show28xiuLabels" type="checkbox" checked> 显示二十八宿标签</label>
 
   <label><input id="showJiazi" type="checkbox" checked> 显示六十甲子连线</label>
-  <label><input id="showSun" type="checkbox" checked> 显示太阳（精确位置）</label>
+  <label><input id="showSun" type="checkbox" checked> 显示太阳（教学近似位置）</label>
   <label><input id="showSolarAngle" type="checkbox" checked> 显示太阳黄经角度</label>
-  <div class="small">白色虚线：春分 0° 基准；橙线：地球指向太阳；黄色弧：当前太阳黄经角。</div>
+  <div class="small">白色虚线：春分 0° 基准；橙线：地球指向太阳；黄色弧：当前太阳黄经角。数值为教学级近似，仅用于可视化与教育展示，不可用于导航或日食、月食预测。</div>
 
   <div style="margin-top:8px">
     <button id="resetBtn" class="btn">重置视角</button>
@@ -82,7 +82,7 @@
     <div class="small">本地 CSV: name,ra_hms,dec_dms,mag,source</div>
   </div>
 
-  <div class="note">说明：太阳位置使用精确天文算法（基于 Julian Day + 均近点近似 + 摆动补偿），二十八宿可通过本地 CSV 或在线抓取（需允许联网）。</div>
+  <div class="note">说明：太阳位置与黄经角使用教学级近似（基于 Julian Day + 均近点近似 + 摆动补偿），仅用于可视化与教育展示，不可用于导航或日食、月食预测；二十八宿可通过本地 CSV 或在线抓取（需允许联网）。</div>
 </div>
 
 <div id="hud">
@@ -203,12 +203,12 @@ function radecToVec(raDeg, decDeg, radius=R){
   return new THREE.Vector3(x,y,z);
 }
 
-/* ----------------- 精确太阳黄经算法（Meeus式简化实现） -----------------
+/* ----------------- 教学级太阳黄经近似（Meeus式简化实现） -----------------
    实现思路（离线、纯 JS）：
    1) 计算 UTC 的 Julian Day (JD) / Julian centuries T since J2000.0
    2) 计算太阳的几何平黄经（以天文适用公式：mean longitude L0, mean anomaly M, C=equation of center）
    3) 计算真黄经 = L0 + C (忽略行星微扰项以保持简单)，再做岁差/章动小修正（本简化实现包含近似均可）
-   该实现对日常节气判断与可视化足够精确（误差 << 0.1°）。
+   该实现适合日常节气判断与可视化教学。
 */
 function toJulianDate(date){
   // date is JS Date (UTC)
@@ -368,7 +368,7 @@ function buildJiazi(){
 }
 buildJiazi();
 
-/* ----------------- 太阳显示（精确） ----------------- */
+/* ----------------- 太阳显示（教学近似） ----------------- */
 function buildSun(){
   groups.sun.clear && groups.sun.clear();
   const sunMesh = new THREE.Mesh(new THREE.SphereGeometry(R*0.06, 24, 16), new THREE.MeshBasicMaterial({color:0xffd24d}));

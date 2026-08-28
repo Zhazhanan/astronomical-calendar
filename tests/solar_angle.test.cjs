@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const Astronomy = require('../js/astronomy-core.js');
 
 function assertNear(actual, expected, message) {
@@ -57,10 +59,23 @@ test('builds a tilted solar-longitude arc whose endpoint follows the sun directi
   assertNear(points[3].z, 10 * Math.cos(tilt), 'arc end z');
 });
 
-test('labels the four seasonal cardinal longitudes correctly', () => {
+test('labels seasonal cardinal longitudes and floor-sector boundaries correctly', () => {
   assert.equal(Astronomy.solarTermSectorAtLongitude(0).name, '春分');
   assert.equal(Astronomy.solarTermSectorAtLongitude(90).name, '夏至');
   assert.equal(Astronomy.solarTermSectorAtLongitude(180).name, '秋分');
   assert.equal(Astronomy.solarTermSectorAtLongitude(270).name, '冬至');
   assert.equal(Astronomy.solarTermSectorAtLongitude(315).name, '立春');
+  assert.equal(Astronomy.solarTermSectorAtLongitude(14.999).name, '春分');
+  assert.equal(Astronomy.solarTermSectorAtLongitude(15).name, '清明');
+  assert.equal(Astronomy.solarTermSectorAtLongitude(359.9).name, '惊蛰');
+});
+
+test('labels solar-angle values as teaching approximations only', () => {
+  const htmlPath = path.join(__dirname, '..', 'tiangan_dizhi_offline.html');
+  const html = fs.readFileSync(htmlPath, 'utf8');
+
+  assert.match(html, /教学级近似/);
+  assert.match(html, /仅用于可视化与教育展示/);
+  assert.match(html, /不可用于导航或日食、月食预测/);
+  assert.doesNotMatch(html, /精确天文算法|精确位置/);
 });
