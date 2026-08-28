@@ -1,0 +1,1152 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#efe4ca">
+  <title>六十甲子 · 天干地支纪年动态示意</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #2c2822;
+      --muted: #756d60;
+      --paper: #f5eedc;
+      --paper-deep: #e8dbc0;
+      --red: #a53b2b;
+      --red-dark: #70281f;
+      --gold: #b18a45;
+      --line: rgba(81, 65, 42, 0.18);
+      --shadow: 0 20px 55px rgba(75, 54, 25, 0.13);
+      --serif: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", serif;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: var(--sans);
+      background:
+        radial-gradient(circle at 18% 12%, rgba(255,255,255,.72), transparent 32%),
+        radial-gradient(circle at 78% 82%, rgba(164,117,57,.10), transparent 28%),
+        repeating-linear-gradient(102deg, rgba(90,66,34,.018) 0 1px, transparent 1px 7px),
+        var(--paper);
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .28;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.13'/%3E%3C/svg%3E");
+      mix-blend-mode: multiply;
+    }
+
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+
+    .page-shell {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 42px 0 38px;
+    }
+
+    .masthead {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 28px;
+      align-items: end;
+      margin-bottom: 26px;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 10px;
+      color: var(--red);
+      font-size: .78rem;
+      font-weight: 700;
+      letter-spacing: .28em;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 32px;
+      height: 1px;
+      background: currentColor;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--serif);
+      font-size: clamp(2.25rem, 5.6vw, 5.2rem);
+      font-weight: 600;
+      letter-spacing: .08em;
+      line-height: .98;
+    }
+
+    .subtitle {
+      max-width: 620px;
+      margin: 16px 0 0;
+      color: var(--muted);
+      font-size: .98rem;
+      line-height: 1.75;
+    }
+
+    .cycle-seal {
+      width: 94px;
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+      border: 2px solid var(--red);
+      color: var(--red);
+      font-family: var(--serif);
+      font-size: 1.05rem;
+      letter-spacing: .18em;
+      line-height: 1.25;
+      text-align: center;
+      transform: rotate(2deg);
+      box-shadow: inset 0 0 0 5px var(--paper), inset 0 0 0 6px rgba(165,59,43,.55);
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: rgba(250, 246, 235, .70);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(5px);
+    }
+
+    .main-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(330px, .85fr);
+      overflow: hidden;
+    }
+
+    .wheel-section {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 630px;
+      padding: 28px;
+      border-right: 1px solid var(--line);
+      background:
+        linear-gradient(145deg, rgba(255,255,255,.28), transparent 52%),
+        radial-gradient(circle at 50% 50%, rgba(177,138,69,.08), transparent 59%);
+    }
+
+    .wheel-wrap {
+      position: relative;
+      width: min(100%, 590px);
+      aspect-ratio: 1;
+    }
+
+    #cycle-wheel {
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      filter: drop-shadow(0 15px 19px rgba(73, 49, 19, .09));
+    }
+
+    .wheel-ring { fill: none; stroke: var(--line); }
+    .ring-wash { fill: rgba(245,238,220,.64); stroke: rgba(112,40,31,.23); }
+    .ring-tick { stroke: rgba(100,77,48,.28); stroke-width: 1; }
+    .axis-cross { stroke: rgba(165,59,43,.16); stroke-width: 1; stroke-dasharray: 3 8; }
+
+    .wheel-marker circle {
+      fill: rgba(250,246,235,.94);
+      stroke: rgba(96,70,38,.18);
+      stroke-width: 1;
+      transition: fill .25s ease, stroke .25s ease, filter .25s ease;
+    }
+
+    .wheel-marker text {
+      fill: var(--ink);
+      font-family: var(--serif);
+      font-size: 22px;
+      font-weight: 600;
+      text-anchor: middle;
+      dominant-baseline: central;
+      pointer-events: none;
+    }
+
+    .wheel-marker.active circle {
+      fill: var(--red);
+      stroke: var(--red-dark);
+      filter: drop-shadow(0 4px 6px rgba(112,40,31,.22));
+    }
+
+    .wheel-marker.active text { fill: #fff9eb; }
+    .stem-marker circle { fill: rgba(226,210,174,.44); }
+
+    .wheel-center-disc {
+      fill: rgba(250,246,235,.96);
+      stroke: var(--gold);
+      stroke-width: 1.5;
+    }
+
+    .center-small {
+      fill: var(--muted);
+      font-family: var(--sans);
+      font-size: 12px;
+      letter-spacing: .22em;
+      text-anchor: middle;
+    }
+
+    .center-name {
+      fill: var(--red-dark);
+      font-family: var(--serif);
+      font-size: 52px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-anchor: middle;
+    }
+
+    .pointer {
+      position: absolute;
+      top: 1.5%;
+      left: 50%;
+      z-index: 3;
+      width: 0;
+      height: 0;
+      border-left: 12px solid transparent;
+      border-right: 12px solid transparent;
+      border-top: 24px solid var(--red);
+      filter: drop-shadow(0 3px 3px rgba(112,40,31,.25));
+      transform: translateX(-50%);
+    }
+
+    .pointer-label {
+      position: absolute;
+      top: -20px;
+      left: 50%;
+      color: var(--red);
+      font-family: var(--serif);
+      font-size: .75rem;
+      letter-spacing: .2em;
+      transform: translateX(-45%);
+      white-space: nowrap;
+    }
+
+    .wheel-legend {
+      position: absolute;
+      right: 26px;
+      bottom: 22px;
+      display: flex;
+      gap: 14px;
+      color: var(--muted);
+      font-size: .76rem;
+    }
+
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-dot { width: 9px; height: 9px; border-radius: 50%; background: rgba(226,210,174,.44); border: 1px solid rgba(96,70,38,.18); }
+    .legend-dot.branch { background: rgba(250,246,235,.94); border-color: rgba(96,70,38,.18); }
+
+    .info-section {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      padding: 38px 36px 32px;
+    }
+
+    .year-kicker {
+      margin: 0;
+      color: var(--muted);
+      font-size: .74rem;
+      font-weight: 700;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+    }
+
+    .current-summary-row {
+      display: flex;
+      align-items: center;
+      gap: clamp(12px, 2vw, 22px);
+      padding: 14px 0 22px;
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+
+    .current-year {
+      flex: 0 0 auto;
+      margin: 0;
+      font-family: var(--serif);
+      font-size: clamp(2.2rem, 4vw, 3.7rem);
+      font-weight: 500;
+      line-height: 1;
+    }
+
+    .current-name-row {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .current-name {
+      color: var(--red-dark);
+      font-family: var(--serif);
+      font-size: clamp(3.5rem, 7vw, 6rem);
+      line-height: 1;
+      letter-spacing: .05em;
+    }
+
+    .zodiac-badge {
+      display: grid;
+      place-items: center;
+      width: 72px;
+      aspect-ratio: 1;
+      border: 1px solid rgba(165,59,43,.42);
+      border-radius: 50%;
+      color: var(--red);
+      background: rgba(165,59,43,.045);
+      font-family: var(--serif);
+      font-size: 1.5rem;
+    }
+
+    .facts {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 9px;
+    }
+
+    .fact {
+      padding: 13px 12px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255,255,255,.24);
+    }
+
+    .fact-label { display: block; margin-bottom: 5px; color: var(--muted); font-size: .7rem; }
+    .fact-value { font-family: var(--serif); font-size: 1.18rem; }
+
+    .explanation {
+      margin: 0;
+      color: var(--muted);
+      font-size: .88rem;
+      line-height: 1.75;
+    }
+
+    .controls {
+      display: grid;
+      gap: 12px;
+      margin-top: auto;
+    }
+
+    .control-row { display: flex; gap: 8px; }
+
+    .control-button,
+    .year-submit,
+    .year-input,
+    .speed-select {
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255,255,255,.43);
+      transition: border-color .2s ease, background .2s ease, transform .2s ease;
+    }
+
+    .control-button,
+    .year-submit { cursor: pointer; }
+    .control-button:hover, .year-submit:hover { border-color: rgba(165,59,43,.48); background: rgba(255,255,255,.72); }
+    .control-button:active, .year-submit:active { transform: translateY(1px); }
+    .control-button:focus-visible, .year-submit:focus-visible, .year-input:focus-visible, .speed-select:focus-visible, .timeline-item:focus-visible, .cycle-slider:focus-visible { outline: 3px solid rgba(165,59,43,.22); outline-offset: 2px; }
+
+    .control-button { flex: 1; padding: 0 13px; }
+    .control-button.primary { flex: 1.35; color: #fff9eb; border-color: var(--red); background: var(--red); }
+    .control-button.primary:hover { background: var(--red-dark); }
+
+    .year-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    .year-input { width: 100%; padding: 0 13px; color: var(--ink); }
+    .year-submit { padding: 0 16px; }
+    .input-hint { min-height: 1.2em; margin: -4px 2px 0; color: var(--red); font-size: .74rem; }
+    .speed-select { padding: 0 9px; color: var(--ink); cursor: pointer; }
+
+    .timeline-panel { min-width: 0; margin-top: 22px; padding: 26px 26px 22px; }
+    .section-heading { display: flex; justify-content: space-between; gap: 18px; align-items: end; margin-bottom: 20px; }
+    .section-heading h2 { margin: 0; font-family: var(--serif); font-size: 1.55rem; font-weight: 600; letter-spacing: .08em; }
+    .section-heading p { margin: 0; color: var(--muted); font-size: .78rem; }
+
+    .timeline-viewport {
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 7px 3px 15px;
+      overscroll-behavior-inline: contain;
+      scroll-behavior: smooth;
+      scroll-snap-type: x proximity;
+      scrollbar-color: rgba(165,59,43,.42) transparent;
+      scrollbar-width: thin;
+    }
+    .timeline {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(60, 78px);
+      gap: 6px;
+      width: max-content;
+      min-width: 100%;
+    }
+
+    .timeline::before {
+      content: "";
+      position: absolute;
+      top: 34px;
+      right: 3%;
+      left: 3%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--gold) 8%, var(--gold) 92%, transparent);
+    }
+
+    .timeline-item {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      justify-items: center;
+      gap: 7px;
+      min-width: 0;
+      padding: 0 4px 10px;
+      border: 0;
+      border-radius: 14px;
+      background: transparent;
+      cursor: pointer;
+      scroll-snap-align: center;
+    }
+
+    .timeline-dot {
+      width: 11px;
+      height: 11px;
+      margin-top: 29px;
+      border: 2px solid var(--gold);
+      border-radius: 50%;
+      background: var(--paper);
+      transition: transform .25s ease, background .25s ease;
+    }
+
+    .timeline-year { color: var(--muted); font-size: .68rem; white-space: nowrap; }
+    .timeline-name { font-family: var(--serif); font-size: 1.05rem; }
+    .timeline-zodiac { color: var(--muted); font-size: .7rem; }
+
+    .timeline-item:hover { background: rgba(177,138,69,.065); }
+    .timeline-item.active { background: rgba(165,59,43,.075); }
+    .timeline-item.active .timeline-dot { background: var(--red); border-color: var(--red); transform: scale(1.42); }
+    .timeline-item.active .timeline-name { color: var(--red-dark); font-size: 1.28rem; font-weight: 700; }
+
+    .slider-row { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; margin-top: 8px; color: var(--muted); font-size: .76rem; }
+    .cycle-slider { width: 100%; accent-color: var(--red); cursor: pointer; }
+    .cycle-position { min-width: 70px; color: var(--red-dark); text-align: right; font-variant-numeric: tabular-nums; }
+
+    .note {
+      display: flex;
+      gap: 11px;
+      max-width: 850px;
+      margin: 18px auto 0;
+      color: var(--muted);
+      font-size: .74rem;
+      line-height: 1.65;
+    }
+
+    .note-mark { color: var(--red); font-family: var(--serif); font-size: 1rem; }
+
+    @media (min-width: 901px) and (min-height: 660px) {
+      .page-shell {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto auto;
+        row-gap: 8px;
+        height: 100dvh;
+        padding: 12px 0 8px;
+      }
+
+      .masthead {
+        align-items: center;
+        margin-bottom: 0;
+      }
+
+      .masthead > div:first-child {
+        display: grid;
+        grid-template-columns: auto minmax(360px, 1fr);
+        column-gap: 24px;
+        align-items: end;
+      }
+
+      .eyebrow {
+        grid-column: 1 / -1;
+        margin-bottom: 3px;
+        font-size: .68rem;
+      }
+
+      h1 {
+        font-size: clamp(2.4rem, 5.8vh, 3.6rem);
+        line-height: .94;
+      }
+
+      .subtitle {
+        max-width: none;
+        margin: 0;
+        font-size: clamp(.72rem, 1.35vh, .86rem);
+        line-height: 1.45;
+      }
+
+      .cycle-seal {
+        width: clamp(54px, 7.2vh, 70px);
+        font-size: .78rem;
+      }
+
+      .main-panel {
+        min-height: 0;
+        height: 100%;
+      }
+
+      .wheel-section {
+        min-height: 0;
+        padding: 8px 18px;
+      }
+
+      .wheel-wrap {
+        width: auto;
+        max-width: 100%;
+        height: 100%;
+      }
+
+      .pointer-label { top: -10px; }
+      .wheel-legend { right: 18px; bottom: 10px; }
+
+      .info-section {
+        min-height: 0;
+        gap: clamp(5px, 1vh, 9px);
+        padding: 12px 18px;
+      }
+
+      .year-kicker { font-size: .63rem; }
+      .current-summary-row { gap: 10px; padding: 3px 0 7px; }
+      .current-year { font-size: clamp(1.8rem, 4.2vh, 2.7rem); }
+
+      .current-name-row {
+        gap: 10px;
+      }
+
+      .current-name { font-size: clamp(2.8rem, 7.3vh, 4.2rem); }
+      .zodiac-badge { width: clamp(46px, 6vh, 56px); font-size: 1.15rem; }
+
+      .facts { gap: 6px; }
+      .fact { padding: 6px 8px; border-radius: 10px; }
+      .fact-label { margin-bottom: 2px; font-size: .62rem; }
+      .fact-value { font-size: 1rem; }
+
+      .explanation { font-size: .74rem; line-height: 1.4; }
+
+      .controls { gap: 6px; }
+      .control-row { gap: 6px; }
+
+      .control-button,
+      .year-submit,
+      .year-input,
+      .speed-select {
+        min-height: 34px;
+        border-radius: 9px;
+      }
+
+      .control-button { padding: 0 10px; }
+      .year-form { gap: 6px; }
+      .input-hint { min-height: .8em; margin-top: -5px; font-size: .64rem; }
+
+      .timeline-panel {
+        margin-top: 0;
+        padding: 9px 16px 7px;
+      }
+
+      .section-heading {
+        margin-bottom: 5px;
+      }
+
+      .section-heading h2 { font-size: 1.12rem; }
+      .section-heading p { font-size: .66rem; }
+
+      .timeline-viewport { padding: 0 3px 2px; }
+      .timeline {
+        grid-template-columns: repeat(60, 72px);
+        gap: 4px;
+        min-width: 100%;
+      }
+      .timeline::before { top: 18px; }
+
+      .timeline-item {
+        gap: 2px;
+        padding: 0 3px 3px;
+        border-radius: 9px;
+      }
+
+      .timeline-dot {
+        width: 8px;
+        height: 8px;
+        margin-top: 14px;
+      }
+
+      .timeline-year { font-size: .58rem; }
+      .timeline-name { font-size: .88rem; }
+      .timeline-zodiac { font-size: .6rem; }
+      .timeline-item.active .timeline-name { font-size: 1.04rem; }
+
+      .slider-row {
+        gap: 8px;
+        margin-top: 1px;
+        font-size: .66rem;
+      }
+
+      .note {
+        max-width: none;
+        margin: 0 auto;
+        font-size: .6rem;
+        line-height: 1.2;
+      }
+
+      .note-mark { font-size: .78rem; }
+    }
+
+    @media (max-width: 900px) {
+      .main-panel { grid-template-columns: 1fr; }
+      .wheel-section { min-height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      .wheel-wrap { max-width: 580px; }
+      .info-section { padding: 30px; }
+      .timeline-viewport { overflow-x: auto; scrollbar-width: thin; }
+    }
+
+    @media (max-width: 600px) {
+      .page-shell { width: min(100% - 18px, 1180px); padding-top: 24px; }
+      .masthead { grid-template-columns: 1fr auto; gap: 12px; align-items: start; }
+      .cycle-seal { width: 64px; font-size: .76rem; }
+      .subtitle { font-size: .86rem; }
+      .panel { border-radius: 20px; }
+      .wheel-section { padding: 16px 8px 22px; }
+      .pointer { top: 0; }
+      .wheel-legend { right: 18px; bottom: 12px; }
+      .info-section { gap: 16px; padding: 25px 18px 22px; }
+      .current-summary-row { gap: clamp(6px, 2.4vw, 10px); padding: 8px 0 12px; }
+      .current-year { font-size: clamp(1.65rem, 8vw, 2.35rem); }
+      .current-name-row { gap: clamp(6px, 2vw, 9px); }
+      .current-name { font-size: clamp(2.3rem, 13vw, 3.6rem); }
+      .zodiac-badge { width: clamp(42px, 12vw, 56px); }
+      .facts { gap: 6px; }
+      .fact { padding: 10px 8px; }
+      .control-row { flex-wrap: wrap; }
+      .control-button { min-width: 26%; }
+      .speed-select { flex: 1; }
+      .timeline-panel { padding: 22px 14px 18px; }
+      .section-heading { display: block; }
+      .section-heading p { margin-top: 5px; }
+      .slider-row { grid-template-columns: 1fr auto; }
+      .slider-row > span:first-child { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page-shell">
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">传统纪年 · 动态演示</p>
+        <h1>六十甲子</h1>
+        <p class="subtitle">十天干与十二地支逐年各进一位，因为最小公倍数是六十，最终形成周而复始的干支纪年循环。</p>
+      </div>
+      <div class="cycle-seal" aria-hidden="true">天干<br>地支</div>
+    </header>
+
+    <section class="panel main-panel" aria-label="天干地支双轮盘示意图">
+      <div class="wheel-section">
+        <div class="wheel-wrap">
+          <span class="pointer-label">当年</span>
+          <span class="pointer" aria-hidden="true"></span>
+          <svg id="cycle-wheel" viewBox="0 0 600 600" role="img" aria-labelledby="wheel-title wheel-description">
+            <title id="wheel-title">天干地支同心轮盘</title>
+            <desc id="wheel-description">外圈为十二地支，内圈为十天干，指针所指为当前年份的组合。</desc>
+            <line class="axis-cross" x1="300" y1="48" x2="300" y2="552"/>
+            <line class="axis-cross" x1="48" y1="300" x2="552" y2="300"/>
+            <circle class="ring-wash" cx="300" cy="300" r="258"/>
+            <circle class="wheel-ring" cx="300" cy="300" r="223"/>
+            <circle class="ring-wash" cx="300" cy="300" r="178"/>
+            <circle class="wheel-ring" cx="300" cy="300" r="140"/>
+            <g id="branch-wheel"></g>
+            <g id="stem-wheel"></g>
+            <circle class="wheel-center-disc" cx="300" cy="300" r="82"/>
+            <text class="center-small" x="300" y="271">当前干支</text>
+            <text id="wheel-center-name" class="center-name" x="300" y="325">甲子</text>
+            <text id="wheel-center-index" class="center-small" x="300" y="351">六十甲子 · 第 1 位</text>
+          </svg>
+        </div>
+        <div class="wheel-legend" aria-hidden="true">
+          <span class="legend-item"><span class="legend-dot branch"></span>十二地支</span>
+          <span class="legend-item"><span class="legend-dot"></span>十天干</span>
+        </div>
+      </div>
+
+      <aside class="info-section" aria-live="polite">
+        <div>
+          <p class="year-kicker">Gregorian year · 公历年份</p>
+          <div class="current-summary-row">
+            <p id="current-year" class="current-year">2026 年</p>
+            <div class="current-name-row">
+              <span id="current-name" class="current-name">丙午</span>
+              <span id="zodiac-badge" class="zodiac-badge" aria-label="生肖马">马</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="facts">
+          <div class="fact"><span class="fact-label">天干</span><span id="stem-fact" class="fact-value">丙 · 阳</span></div>
+          <div class="fact"><span class="fact-label">地支</span><span id="branch-fact" class="fact-value">午 · 马</span></div>
+          <div class="fact"><span class="fact-label">五行</span><span id="element-fact" class="fact-value">火</span></div>
+        </div>
+
+        <p id="explanation" class="explanation">丙为阳火，午对应生肖马。这是六十甲子循环中的第 43 位。</p>
+
+        <div class="controls" aria-label="年份播放控制">
+          <div class="control-row">
+            <button id="prev-year" class="control-button" type="button" aria-label="上一年">← 上一年</button>
+            <button id="play-toggle" class="control-button primary" type="button" aria-pressed="false">▶ 播放</button>
+            <button id="next-year" class="control-button" type="button" aria-label="下一年">下一年 →</button>
+          </div>
+          <div class="control-row">
+            <button id="today-button" class="control-button" type="button">回到今年</button>
+            <select id="speed-select" class="speed-select" aria-label="播放速度">
+              <option value="1400" selected>慢速</option>
+              <option value="800">常速</option>
+              <option value="380">快速</option>
+            </select>
+          </div>
+          <form id="year-form" class="year-form">
+            <input id="year-input" class="year-input" type="number" step="1" inputmode="numeric" aria-label="输入公历年份，负数表示公元前" placeholder="输入年份，如 1984；公元前用负数">
+            <button class="year-submit" type="submit">查看</button>
+          </form>
+          <p id="input-hint" class="input-hint" role="alert"></p>
+        </div>
+      </aside>
+    </section>
+
+    <section class="panel timeline-panel" aria-labelledby="timeline-heading">
+      <div class="section-heading">
+        <h2 id="timeline-heading">流年时间轴</h2>
+        <p>完整六十年 · 左右滑动并点击年份查看</p>
+      </div>
+      <div class="timeline-viewport" tabindex="0" aria-label="完整六十年流年时间轴，可左右滑动查看">
+        <div id="timeline" class="timeline"></div>
+      </div>
+      <div class="slider-row">
+        <span>六十甲子位置</span>
+        <input id="cycle-slider" class="cycle-slider" type="range" min="0" max="59" step="1" aria-label="拖动查看六十甲子中的位置">
+        <span id="cycle-position" class="cycle-position">第 43 / 60 位</span>
+      </div>
+    </section>
+
+    <p class="note"><span class="note-mark">※</span><span>本图用于说明干支纪年的年度循环，以公元 4 年为甲子年基准，不设置公元 0 年。若用于八字、命理或精确日期换年，通常还需按立春等具体岁首规则判断。</span></p>
+  </main>
+
+  <script id="ganzhi-core">
+  (function (root) {
+    'use strict';
+
+    var STEMS = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸'];
+    var BRANCHES = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
+    var ZODIAC = ['鼠', '牛', '虎', '兔', '龙', '蛇', '马', '羊', '猴', '鸡', '狗', '猪'];
+    var ELEMENTS = ['木', '木', '火', '火', '土', '土', '金', '金', '水', '水'];
+
+    function mod(value, divisor) {
+      return ((value % divisor) + divisor) % divisor;
+    }
+
+    function toAstronomicalYear(year) {
+      if (!Number.isSafeInteger(year)) throw new RangeError('年份超出安全范围，请输入可精确表示的整数');
+      if (year === 0) throw new RangeError('历史纪年中不存在公元 0 年');
+      return year < 0 ? year + 1 : year;
+    }
+
+    function getGanzhi(year) {
+      var astronomicalYear = toAstronomicalYear(year);
+      var cycleIndex = mod(astronomicalYear - 4, 60);
+      var stemIndex = cycleIndex % 10;
+      var branchIndex = cycleIndex % 12;
+      var stem = STEMS[stemIndex];
+      var branch = BRANCHES[branchIndex];
+
+      return {
+        year: year,
+        cycleIndex: cycleIndex,
+        stemIndex: stemIndex,
+        branchIndex: branchIndex,
+        stem: stem,
+        branch: branch,
+        name: stem + branch,
+        zodiac: ZODIAC[branchIndex],
+        element: ELEMENTS[stemIndex],
+        polarity: stemIndex % 2 === 0 ? '阳' : '阴'
+      };
+    }
+
+    function stepYear(year, amount) {
+      if (!Number.isSafeInteger(year)) throw new RangeError('年份超出安全范围，请输入可精确表示的整数');
+      if (year === 0) throw new RangeError('历史纪年中不存在公元 0 年');
+      if (!Number.isSafeInteger(amount)) throw new TypeError('步数必须是安全整数');
+      var result = year;
+      var direction = amount < 0 ? -1 : 1;
+      for (var i = 0; i < Math.abs(amount); i += 1) {
+        result += direction;
+        if (!Number.isSafeInteger(result)) throw new RangeError('年份超出安全范围，请输入可精确表示的整数');
+        if (result === 0) result += direction;
+      }
+      return result;
+    }
+
+    function buildTimeline(centerYear, radius) {
+      if (!Number.isInteger(radius) || radius < 0) throw new RangeError('时间轴半径必须是非负整数');
+      var firstYear = stepYear(centerYear, -radius);
+      var items = [];
+      for (var offset = 0; offset <= radius * 2; offset += 1) {
+        items.push(getGanzhi(stepYear(firstYear, offset)));
+      }
+      return items;
+    }
+
+    function isTimelineCenterYear(year) {
+      return Number.isSafeInteger(year) && year !== 0 &&
+        year >= Number.MIN_SAFE_INTEGER + 30 &&
+        year <= Number.MAX_SAFE_INTEGER - 29;
+    }
+
+    function getTimelineCenterCandidate(year, amount) {
+      if (!isTimelineCenterYear(year) || !Number.isSafeInteger(amount)) {
+        return null;
+      }
+      try {
+        var candidate = stepYear(year, amount);
+        return isTimelineCenterYear(candidate) ? candidate : null;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function buildCycleTimeline(centerYear) {
+      if (!isTimelineCenterYear(centerYear)) {
+        throw new RangeError('该年份无法生成完整六十年时间轴');
+      }
+      var firstYear = stepYear(centerYear, -30);
+      var items = [];
+      for (var offset = 0; offset < 60; offset += 1) {
+        items.push(getGanzhi(stepYear(firstYear, offset)));
+      }
+      return items;
+    }
+
+    root.GanzhiCore = {
+      STEMS: STEMS,
+      BRANCHES: BRANCHES,
+      getGanzhi: getGanzhi,
+      stepYear: stepYear,
+      buildTimeline: buildTimeline,
+      isTimelineCenterYear: isTimelineCenterYear,
+      getTimelineCenterCandidate: getTimelineCenterCandidate,
+      buildCycleTimeline: buildCycleTimeline
+    };
+  }(globalThis));
+  </script>
+
+  <script>
+  (function () {
+    'use strict';
+
+    var core = globalThis.GanzhiCore;
+    var state = {
+      year: new Date().getFullYear(),
+      playing: false,
+      timer: null,
+      animationFrame: null,
+      cycleIndex: null,
+      stemAngle: 0,
+      branchAngle: 0
+    };
+
+    var reducedMotion = globalThis.matchMedia && globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var svgNS = 'http://www.w3.org/2000/svg';
+    var branchWheel = document.getElementById('branch-wheel');
+    var stemWheel = document.getElementById('stem-wheel');
+    var currentYearEl = document.getElementById('current-year');
+    var currentNameEl = document.getElementById('current-name');
+    var zodiacBadge = document.getElementById('zodiac-badge');
+    var stemFact = document.getElementById('stem-fact');
+    var branchFact = document.getElementById('branch-fact');
+    var elementFact = document.getElementById('element-fact');
+    var explanation = document.getElementById('explanation');
+    var centerName = document.getElementById('wheel-center-name');
+    var centerIndex = document.getElementById('wheel-center-index');
+    var timeline = document.getElementById('timeline');
+    var timelineViewport = document.querySelector('.timeline-viewport');
+    var slider = document.getElementById('cycle-slider');
+    var cyclePosition = document.getElementById('cycle-position');
+    var playToggle = document.getElementById('play-toggle');
+    var speedSelect = document.getElementById('speed-select');
+    var yearForm = document.getElementById('year-form');
+    var yearInput = document.getElementById('year-input');
+    var inputHint = document.getElementById('input-hint');
+
+    function createSvgElement(name, attributes) {
+      var element = document.createElementNS(svgNS, name);
+      Object.keys(attributes || {}).forEach(function (key) {
+        element.setAttribute(key, attributes[key]);
+      });
+      return element;
+    }
+
+    function addMarkers(container, labels, radius, markerClass, markerRadius) {
+      labels.forEach(function (label, index) {
+        var angle = index * (360 / labels.length);
+        var position = createSvgElement('g', {
+          transform: 'rotate(' + angle + ' 300 300) translate(300 ' + (300 - radius) + ')'
+        });
+        var face = createSvgElement('g', { class: 'wheel-marker ' + markerClass, 'data-index': index });
+        var circle = createSvgElement('circle', { cx: 0, cy: 0, r: markerRadius });
+        var text = createSvgElement('text', { x: 0, y: 1 });
+        text.textContent = label;
+        face.appendChild(circle);
+        face.appendChild(text);
+        position.appendChild(face);
+        container.appendChild(position);
+      });
+    }
+
+    function addTicks() {
+      var svg = document.getElementById('cycle-wheel');
+      var tickGroup = createSvgElement('g', { 'aria-hidden': 'true' });
+      for (var i = 0; i < 60; i += 1) {
+        var isMajor = i % 5 === 0;
+        var tick = createSvgElement('line', {
+          class: 'ring-tick',
+          x1: 300,
+          y1: isMajor ? 50 : 56,
+          x2: 300,
+          y2: 63,
+          transform: 'rotate(' + (i * 6) + ' 300 300)'
+        });
+        tick.style.strokeWidth = isMajor ? '1.6' : '.8';
+        tickGroup.appendChild(tick);
+      }
+      svg.insertBefore(tickGroup, branchWheel);
+    }
+
+    function formatYear(year) {
+      return year < 0 ? '公元前 ' + Math.abs(year) + ' 年' : year + ' 年';
+    }
+
+    function shortYear(year) {
+      return year < 0 ? '前 ' + Math.abs(year) : String(year);
+    }
+
+    function signedCycleDistance(from, to) {
+      var forward = (to - from + 60) % 60;
+      return forward > 30 ? forward - 60 : forward;
+    }
+
+    function setWheelTransform(stemAngle, branchAngle) {
+      stemWheel.setAttribute('transform', 'rotate(' + stemAngle + ' 300 300)');
+      branchWheel.setAttribute('transform', 'rotate(' + branchAngle + ' 300 300)');
+      stemWheel.querySelectorAll('.wheel-marker').forEach(function (face) {
+        face.setAttribute('transform', 'rotate(' + (-stemAngle) + ')');
+      });
+      branchWheel.querySelectorAll('.wheel-marker').forEach(function (face) {
+        face.setAttribute('transform', 'rotate(' + (-branchAngle) + ')');
+      });
+    }
+
+    function animateWheels(info) {
+      if (state.animationFrame) cancelAnimationFrame(state.animationFrame);
+
+      if (state.cycleIndex === null) {
+        state.stemAngle = -info.stemIndex * 36;
+        state.branchAngle = -info.branchIndex * 30;
+        setWheelTransform(state.stemAngle, state.branchAngle);
+        return;
+      }
+
+      var distance = signedCycleDistance(state.cycleIndex, info.cycleIndex);
+      var fromStem = state.stemAngle;
+      var fromBranch = state.branchAngle;
+      var toStem = fromStem - distance * 36;
+      var toBranch = fromBranch - distance * 30;
+
+      if (reducedMotion || distance === 0) {
+        state.stemAngle = toStem;
+        state.branchAngle = toBranch;
+        setWheelTransform(toStem, toBranch);
+        return;
+      }
+
+      var startedAt = performance.now();
+      var duration = Math.min(720, 360 + Math.abs(distance) * 18);
+      function frame(now) {
+        var progress = Math.min(1, (now - startedAt) / duration);
+        var eased = 1 - Math.pow(1 - progress, 3);
+        var stemAngle = fromStem + (toStem - fromStem) * eased;
+        var branchAngle = fromBranch + (toBranch - fromBranch) * eased;
+        setWheelTransform(stemAngle, branchAngle);
+        if (progress < 1) {
+          state.animationFrame = requestAnimationFrame(frame);
+        } else {
+          state.stemAngle = toStem;
+          state.branchAngle = toBranch;
+          state.animationFrame = null;
+        }
+      }
+      state.animationFrame = requestAnimationFrame(frame);
+    }
+
+    function markActive(container, index) {
+      container.querySelectorAll('.wheel-marker').forEach(function (marker) {
+        marker.classList.toggle('active', Number(marker.dataset.index) === index);
+      });
+    }
+
+    function renderTimeline() {
+      var fragment = document.createDocumentFragment();
+      core.buildCycleTimeline(state.year).forEach(function (item) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'timeline-item' + (item.year === state.year ? ' active' : '');
+        button.setAttribute('aria-label', formatYear(item.year) + '，' + item.name + item.zodiac + '年');
+        button.setAttribute('aria-current', item.year === state.year ? 'true' : 'false');
+        button.innerHTML =
+          '<span class="timeline-dot"></span>' +
+          '<span class="timeline-year">' + shortYear(item.year) + '</span>' +
+          '<span class="timeline-name">' + item.name + '</span>' +
+          '<span class="timeline-zodiac">' + item.zodiac + '年</span>';
+        button.addEventListener('click', function () { setYear(item.year); });
+        fragment.appendChild(button);
+      });
+      timeline.replaceChildren(fragment);
+      var active = timeline.querySelector('.timeline-item.active');
+      if (active) {
+        timelineViewport.scrollTo({
+          left: active.offsetLeft - (timelineViewport.clientWidth - active.offsetWidth) / 2,
+          behavior: reducedMotion ? 'auto' : 'smooth'
+        });
+      }
+    }
+
+    function render() {
+      var info = core.getGanzhi(state.year);
+      animateWheels(info);
+      markActive(stemWheel, info.stemIndex);
+      markActive(branchWheel, info.branchIndex);
+
+      currentYearEl.textContent = formatYear(info.year);
+      currentNameEl.textContent = info.name;
+      zodiacBadge.textContent = info.zodiac;
+      zodiacBadge.setAttribute('aria-label', '生肖' + info.zodiac);
+      stemFact.textContent = info.stem + ' · ' + info.polarity;
+      branchFact.textContent = info.branch + ' · ' + info.zodiac;
+      elementFact.textContent = info.element;
+      explanation.textContent = info.stem + '为' + info.polarity + info.element + '，' + info.branch + '对应生肖' + info.zodiac + '。这是六十甲子循环中的第 ' + (info.cycleIndex + 1) + ' 位。';
+      centerName.textContent = info.name;
+      centerIndex.textContent = '六十甲子 · 第 ' + (info.cycleIndex + 1) + ' 位';
+      slider.value = info.cycleIndex;
+      cyclePosition.textContent = '第 ' + (info.cycleIndex + 1) + ' / 60 位';
+      renderTimeline();
+      state.cycleIndex = info.cycleIndex;
+    }
+
+    function setYear(year) {
+      if (!Number.isSafeInteger(year) || year === 0) {
+        inputHint.textContent = year === 0 ? '历史纪年中不存在公元 0 年。' : '年份超出可精确计算的范围，请换一个年份。';
+        return;
+      }
+      if (!core.isTimelineCenterYear(year)) {
+        inputHint.textContent = '该年份距离计算边界太近，无法显示完整六十年。';
+        return;
+      }
+      inputHint.textContent = '';
+      state.year = year;
+      render();
+    }
+
+    function stopPlayback() {
+      state.playing = false;
+      if (state.timer) clearInterval(state.timer);
+      state.timer = null;
+      playToggle.textContent = '▶ 播放';
+      playToggle.setAttribute('aria-pressed', 'false');
+    }
+
+    function startPlayback() {
+      stopPlayback();
+      state.playing = true;
+      playToggle.textContent = 'Ⅱ 暂停';
+      playToggle.setAttribute('aria-pressed', 'true');
+      state.timer = setInterval(function () {
+        setYear(core.stepYear(state.year, 1));
+      }, Number(speedSelect.value));
+    }
+
+    addTicks();
+    addMarkers(branchWheel, core.BRANCHES, 223, 'branch-marker', 24);
+    addMarkers(stemWheel, core.STEMS, 140, 'stem-marker', 23);
+
+    document.getElementById('prev-year').addEventListener('click', function () {
+      stopPlayback();
+      setYear(core.stepYear(state.year, -1));
+    });
+    document.getElementById('next-year').addEventListener('click', function () {
+      stopPlayback();
+      setYear(core.stepYear(state.year, 1));
+    });
+    document.getElementById('today-button').addEventListener('click', function () {
+      stopPlayback();
+      setYear(new Date().getFullYear());
+    });
+    playToggle.addEventListener('click', function () {
+      if (state.playing) stopPlayback(); else startPlayback();
+    });
+    speedSelect.addEventListener('change', function () {
+      if (state.playing) startPlayback();
+    });
+    yearForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var value = Number(yearInput.value);
+      if (yearInput.value.trim() === '' || !Number.isInteger(value)) {
+        inputHint.textContent = '请输入一个完整年份。';
+        return;
+      }
+      stopPlayback();
+      setYear(value);
+    });
+    slider.addEventListener('input', function () {
+      stopPlayback();
+      var target = Number(slider.value);
+      var current = core.getGanzhi(state.year).cycleIndex;
+      var candidate = core.getTimelineCenterCandidate(state.year, signedCycleDistance(current, target));
+      if (candidate === null) {
+        slider.value = current;
+        inputHint.textContent = '该位置超出完整六十年的可计算范围。';
+        return;
+      }
+      setYear(candidate);
+    });
+    timelineViewport.addEventListener('wheel', function (event) {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      var maxScroll = timelineViewport.scrollWidth - timelineViewport.clientWidth;
+      var canMove = (event.deltaY < 0 && timelineViewport.scrollLeft > 0) ||
+        (event.deltaY > 0 && timelineViewport.scrollLeft < maxScroll - 1);
+      if (!canMove) return;
+      event.preventDefault();
+      timelineViewport.scrollLeft += event.deltaY;
+    }, { passive: false });
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden && state.playing) stopPlayback();
+    });
+
+    render();
+  }());
+  </script>
+</body>
+</html>

@@ -2,31 +2,50 @@
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<title>天干·地支·节气 · 专业可视化（宣纸风）</title>
+<title>天干·地支·节气 · 专业可视化（深空主题）</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
-  /* 宣纸风样式（适合打印海报）*/
-  html,body{height:100%;margin:0;background: #fbf5e6; color:#1a1a1a; font-family: "Noto Serif", "Songti SC", serif;}
+  :root{
+    color-scheme:dark;
+    --space:#020617;
+    --panel:rgba(3, 7, 18, 0.86);
+    --panel-border:rgba(148, 163, 184, 0.28);
+    --text:#f8fafc;
+    --muted:#cbd5e1;
+    --accent:#38bdf8;
+    --accent-strong:#0ea5e9;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;overflow:hidden;background:var(--space);color:var(--text);font-family:Inter,"PingFang SC","Microsoft YaHei",Arial,sans-serif}
   #canvasContainer{position:fixed; inset:0; z-index:0}
-  #ui{position: absolute; left:12px; top:12px; width:360px; z-index:50;
-      background: rgba(255,250,240,0.92); border:1px solid rgba(0,0,0,0.06);
-      padding:12px; border-radius:10px; box-shadow: 0 8px 30px rgba(0,0,0,0.08);}
-  #ui h2{margin:0 0 8px 0; font-size:16px; color:#2b2b2b}
-  label{display:block; margin:6px 0; font-size:13px; color:#222}
-  .btn{background:#a25c1a;color:#fff;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;margin-right:6px}
-  .small{font-size:12px;color:#333;margin-top:8px}
-  #hud{position:absolute; right:12px; top:12px; z-index:50; width:280px;
-       background: rgba(255,250,240,0.95); padding:10px; border-radius:10px; border:1px solid rgba(0,0,0,0.06);}
-  #ganzhiPanel{margin-top:8px; max-height:420px; overflow:auto; font-size:13px}
-  table{border-collapse:collapse; width:100%}
-  th,td{padding:6px;border-bottom:1px dashed rgba(0,0,0,0.06); text-align:left; font-size:13px}
-  .exportBtn{background:#2b6cff;color:#fff;padding:6px;border-radius:6px;border:none;cursor:pointer}
-  .note{font-size:12px;color:#555;margin-top:8px}
-  #credits{position:absolute; right:12px; bottom:12px; padding:6px 8px; font-size:12px; color:#555; background:rgba(255,250,240,0.9); border-radius:6px;}
+  #canvasContainer canvas{display:block}
+  #labelLayer{position:fixed;inset:0;z-index:10;overflow:hidden;pointer-events:none}
+  .space-label{position:absolute;white-space:nowrap;font-weight:600;line-height:1;text-shadow:0 1px 3px #000,0 0 8px rgba(0,0,0,.95);transform:translate(-50%,-50%);will-change:left,top}
+  #ui,#hud,#credits{color:var(--text);background:var(--panel);border:1px solid var(--panel-border);box-shadow:0 16px 40px rgba(0,0,0,0.34);backdrop-filter:blur(12px)}
+  #ui{position:absolute;left:12px;top:12px;width:min(350px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;z-index:50;padding:16px;border-radius:14px}
+  #ui h2{margin:0 0 12px;font-size:18px;line-height:1.4;color:#fff;letter-spacing:.04em}
+  label{display:block;margin:7px 0;font-size:14px;line-height:1.5;color:var(--text)}
+  input[type="checkbox"]{accent-color:var(--accent);width:15px;height:15px;vertical-align:-2px}
+  input[type="file"]{display:block;width:100%;margin-top:6px;color:var(--muted);font-size:13px}
+  input::file-selector-button{min-height:34px;margin-right:8px;padding:6px 10px;color:#e0f2fe;background:#0f172a;border:1px solid #334155;border-radius:7px;cursor:pointer}
+  .btn{min-height:38px;padding:8px 13px;color:#fff;background:linear-gradient(180deg,var(--accent),var(--accent-strong));border:1px solid rgba(125,211,252,.55);border-radius:8px;box-shadow:0 6px 18px rgba(14,165,233,.22);font-weight:600;cursor:pointer;margin-right:7px}
+  .btn:hover{filter:brightness(1.1)}
+  .btn:focus-visible,input:focus-visible{outline:2px solid #facc15;outline-offset:2px}
+  .small{font-size:12px;line-height:1.55;color:var(--muted);margin-top:8px}
+  #hud{position:absolute;right:12px;top:12px;z-index:50;width:300px;padding:13px 15px;border-radius:12px;font-size:13px;line-height:1.7;font-variant-numeric:tabular-nums}
+  .note{font-size:12px;line-height:1.6;color:var(--muted);margin-top:10px}
+  #credits{position:absolute;right:12px;bottom:12px;z-index:50;padding:7px 10px;border-radius:8px;font-size:12px;color:#94a3b8}
+  hr{border-color:rgba(148,163,184,.22)!important}
+  @media (max-width:720px){
+    #ui{max-height:46vh;padding:13px}
+    #hud{left:12px;right:12px;top:auto;bottom:12px;width:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 12px;font-size:12px;line-height:1.45}
+    #credits{display:none}
+  }
 </style>
 </head>
 <body>
 <div id="canvasContainer"></div>
+<div id="labelLayer" aria-hidden="true"></div>
 
 <div id="ui">
   <h2>天干·地支·节气（专业版）</h2>
@@ -61,18 +80,6 @@
     <div class="small">本地 CSV: name,ra_hms,dec_dms,mag,source</div>
   </div>
 
-  <hr style="margin:10px 0; border:none; border-top:1px solid rgba(0,0,0,0.06)">
-
-  <div>
-    <label>甲子交互表（可导出）</label>
-    <div id="ganzhiPanel">
-      <table id="ganzhiTable"><thead><tr><th>#</th><th>甲子</th><th>天干</th><th>地支</th><th>操作</th></tr></thead><tbody></tbody></table>
-    </div>
-    <div style="margin-top:6px">
-      <button id="exportJiazi" class="exportBtn">导出甲子表 CSV</button>
-    </div>
-  </div>
-
   <div class="note">说明：太阳位置使用精确天文算法（基于 Julian Day + 均近点近似 + 摆动补偿），二十八宿可通过本地 CSV 或在线抓取（需允许联网）。</div>
 </div>
 
@@ -85,7 +92,7 @@
   <div id="sunCoords">太阳赤经/赤纬: —</div>
 </div>
 
-<div id="credits">离线版 · 宣纸风 · 可打印海报</div>
+<div id="credits">离线版 · 深空主题 · 高对比可视化</div>
 
 <!-- 本地 three + OrbitControls（UMD 非 module） -->
 <script src="./three.min.js"></script>
@@ -95,7 +102,7 @@
 /* ----------------- 场景与群组 ------------------ */
 const container = document.getElementById('canvasContainer');
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xfbf3df); // 宣纸底
+scene.background = new THREE.Color(0x020617);
 
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 6000);
 camera.position.set(0, 180, 420);
@@ -117,13 +124,29 @@ const groups = {
 };
 Object.values(groups).forEach(g=>scene.add(g));
 
-/* scene baseline aesthetics (ink color lines) */
-const inkColor = 0x2b2b2b;
+/* star field */
+(function buildStarfield(){
+  const count = 1800;
+  const positions = new Float32Array(count * 3);
+  for(let i=0;i<count;i++){
+    const radius = 900 + Math.random() * 1500;
+    const theta = Math.random() * Math.PI * 2;
+    const cosPhi = Math.random() * 2 - 1;
+    const sinPhi = Math.sqrt(1 - cosPhi * cosPhi);
+    positions[i*3] = radius * sinPhi * Math.cos(theta);
+    positions[i*3+1] = radius * cosPhi;
+    positions[i*3+2] = radius * sinPhi * Math.sin(theta);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const material = new THREE.PointsMaterial({color:0xffffff,size:2.2,transparent:true,opacity:0.82,depthWrite:false});
+  scene.add(new THREE.Points(geometry, material));
+})();
 
-/* sphere wire (for print composition) */
+/* celestial sphere wire */
 (function(){
   const geo = new THREE.SphereGeometry(200, 64, 32);
-  const mat = new THREE.MeshBasicMaterial({color:0x000000, wireframe:true, opacity:0.03, transparent:true});
+  const mat = new THREE.MeshBasicMaterial({color:0x64748b, wireframe:true, opacity:0.16, transparent:true});
   const mesh = new THREE.Mesh(geo, mat); scene.add(mesh);
 })();
 
@@ -131,19 +154,32 @@ const inkColor = 0x2b2b2b;
 const R = 200;
 const obliquity = 23.43929111 * Math.PI/180;
 
-/* label helper (Canvas) - uses serif to imitate brush-like stroke */
-function makeCanvasLabel(text, size=36, color="#2b2b2b"){
-  const w = 512, h = 256;
-  const c = document.createElement('canvas'); c.width=w; c.height=h;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = color;
-  ctx.font = `${size}px serif`;
-  ctx.textAlign = 'center'; ctx.textBaseline='middle';
-  ctx.fillText(text, w/2, h/2);
-  const tex = new THREE.CanvasTexture(c); tex.needsUpdate=true;
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true}));
-  sp.scale.set(size*0.6, size*0.25, 1);
-  return sp;
+/* screen-space labels stay legible regardless of camera distance */
+const labelLayer = document.getElementById('labelLayer');
+const screenLabels = [];
+function makeScreenLabel(text, size=36, color="#f8fafc"){
+  const anchor = new THREE.Object3D();
+  const element = document.createElement('div');
+  element.className = 'space-label';
+  element.textContent = text;
+  element.style.color = color;
+  element.style.fontSize = Math.max(14, Math.round(size * 0.5)) + 'px';
+  labelLayer.appendChild(element);
+  anchor.userData.labelElement = element;
+  screenLabels.push({anchor, element});
+  return anchor;
+}
+function clearScreenLabels(group){
+  const removed = new Set();
+  group.traverse(object=>{
+    if(object.userData.labelElement){
+      object.userData.labelElement.remove();
+      removed.add(object);
+    }
+  });
+  for(let i=screenLabels.length-1;i>=0;i--){
+    if(removed.has(screenLabels[i].anchor)) screenLabels.splice(i,1);
+  }
 }
 
 /* RA/Dec -> cart */
@@ -231,7 +267,7 @@ function eclipticToEquatorial(lonDeg, latDeg=0, obl=radToDeg(obliquity)){
     pts.push(new THREE.Vector3(x*R, y*R, z*R));
   }
   const geom = new THREE.BufferGeometry().setFromPoints(pts);
-  const line = new THREE.Line(geom, new THREE.LineBasicMaterial({color:0x8b5a2b, linewidth:1, opacity:0.9}));
+  const line = new THREE.Line(geom, new THREE.LineBasicMaterial({color:0xfacc15, linewidth:1, opacity:1}));
   groups.ecliptic.add(line);
 })();
 (function buildEquator(){
@@ -244,7 +280,7 @@ function eclipticToEquatorial(lonDeg, latDeg=0, obl=radToDeg(obliquity)){
     pts.push(new THREE.Vector3(x*R, y*R, z*R));
   }
   const geom = new THREE.BufferGeometry().setFromPoints(pts);
-  const line = new THREE.Line(geom, new THREE.LineBasicMaterial({color:0x2b6cff, linewidth:1, opacity:0.9}));
+  const line = new THREE.Line(geom, new THREE.LineBasicMaterial({color:0x38bdf8, linewidth:1, opacity:1}));
   groups.equator.add(line);
 })();
 (function buildGalactic(){
@@ -258,7 +294,7 @@ function eclipticToEquatorial(lonDeg, latDeg=0, obl=radToDeg(obliquity)){
     pts.push(new THREE.Vector3(x*R, y*R, z*R));
   }
   const geom = new THREE.BufferGeometry().setFromPoints(pts);
-  const line = new THREE.Line(geom, new THREE.LineBasicMaterial({color:0x8f6fff, opacity:0.35}));
+  const line = new THREE.Line(geom, new THREE.LineBasicMaterial({color:0xa78bfa, opacity:0.45, transparent:true}));
   groups.galactic.add(line);
 })();
 groups.galactic.visible = false;
@@ -271,7 +307,7 @@ const jieqiNames = ['立春','雨水','惊蛰','春分','清明','谷雨','立�
     const ang = i/24 * Math.PI*2;
     const x = Math.cos(ang), y=Math.sin(ang)*Math.cos(obliquity), z=Math.sin(ang)*Math.sin(obliquity);
     const pos = new THREE.Vector3(x*r,y*r,z*r);
-    const lab = makeCanvasLabel(jieqiNames[i], 20, "#8b5a2b");
+    const lab = makeScreenLabel(jieqiNames[i], 25, "#f8fafc");
     lab.position.copy(pos);
     groups.jieqi.add(lab);
   }
@@ -284,13 +320,13 @@ const dizhi = ["子","丑","寅","卯","辰","巳","午","未","申","酉","戌"
   const r1 = R*0.45, r2 = R*0.65;
   tiangan.forEach((t,i)=>{
     const ang = i/10 * Math.PI*2 - Math.PI/2;
-    const sp = makeCanvasLabel(t, 36, "#225522");
+    const sp = makeScreenLabel(t, 42, "#67e8f9");
     sp.position.set(Math.cos(ang)*r1, -30, Math.sin(ang)*r1);
     groups.tiangan.add(sp);
   });
   dizhi.forEach((d,i)=>{
     const ang = i/12 * Math.PI*2 - Math.PI/2;
-    const sp = makeCanvasLabel(d, 32, "#2b5678");
+    const sp = makeScreenLabel(d, 38, "#fbbf24");
     sp.position.set(Math.cos(ang)*r2, -36, Math.sin(ang)*r2);
     groups.dizhi.add(sp);
   });
@@ -303,69 +339,38 @@ const xiuNames = ["角","亢","氐","房","心","尾","箕","斗","牛","女","�
     const ang = i/28 * Math.PI*2;
     const x = Math.cos(ang), y = Math.sin(ang)*Math.cos(obliquity), z = Math.sin(ang)*Math.sin(obliquity);
     const pos = new THREE.Vector3(x*r, y*r, z*r);
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(1.8,8,6), new THREE.MeshBasicMaterial({color:0x8b5a2b}));
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(2.1,8,6), new THREE.MeshBasicMaterial({color:0xc4b5fd}));
     dot.position.copy(pos); groups.xiu.add(dot);
-    const label = makeCanvasLabel(xiuNames[i], 18, "#8b5a2b");
+    const label = makeScreenLabel(xiuNames[i], 23, "#ddd6fe");
     label.position.copy(pos.clone().multiplyScalar(1.02)); groups.xiu.add(label);
   }
 })();
 
-/* 60 甲子连线 + side table */
+/* 60 甲子连线 */
 function buildJiazi(){
   groups.jiazi.clear && groups.jiazi.clear();
-  const tbody = document.querySelector('#ganzhiTable tbody');
-  tbody.innerHTML = '';
   for(let i=0;i<60;i++){
     const tgIdx = i % 10, dzIdx = i % 12;
     const angTG = tgIdx/10 * Math.PI*2 - Math.PI/2;
     const posTG = new THREE.Vector3(Math.cos(angTG)*R*0.45, -28, Math.sin(angTG)*R*0.45);
     const angDZ = dzIdx/12 * Math.PI*2 - Math.PI/2;
     const posDZ = new THREE.Vector3(Math.cos(angDZ)*R*0.65, -36, Math.sin(angDZ)*R*0.65);
-    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([posTG,posDZ]), new THREE.LineBasicMaterial({color:0x336644, opacity:0.6}));
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([posTG,posDZ]), new THREE.LineBasicMaterial({color:0x22d3ee, opacity:0.28, transparent:true}));
     groups.jiazi.add(line);
     const mid = posTG.clone().add(posDZ).multiplyScalar(0.5);
-    const marker = new THREE.Mesh(new THREE.SphereGeometry(1.6,8,6), new THREE.MeshBasicMaterial({color:0xffee88}));
+    const marker = new THREE.Mesh(new THREE.SphereGeometry(1.8,8,6), new THREE.MeshBasicMaterial({color:0xfacc15}));
     marker.position.copy(mid); marker.userData = {name: tiangan[tgIdx]+dizhi[dzIdx], idx:i};
     groups.jiazi.add(marker);
-
-    const row = document.createElement('tr');
-    row.innerHTML = `<td>${i}</td><td>${tiangan[tgIdx]+dizhi[dzIdx]}</td><td>${tiangan[tgIdx]}</td><td>${dizhi[dzIdx]}</td>
-      <td><button data-idx="${i}" class="focusBtn">聚焦</button></td>`;
-    tbody.appendChild(row);
   }
-  // attach focus handlers
-  document.querySelectorAll('.focusBtn').forEach(btn=>{
-    btn.addEventListener('click', ()=> {
-      const idx = Number(btn.getAttribute('data-idx'));
-      // find marker
-      const marker = groups.jiazi.children.find(ch=>ch.userData && ch.userData.idx === idx);
-      if(marker){
-        controls.target.copy(marker.position);
-        camera.position.set(marker.position.x + 40, marker.position.y + 30, marker.position.z + 80);
-      }
-    });
-  });
 }
 buildJiazi();
-
-/* export jiazi csv */
-document.getElementById('exportJiazi').addEventListener('click', ()=>{
-  let csv = 'idx,ganZhi,tg,dz\n';
-  for(let i=0;i<60;i++){
-    const tgIdx = i%10, dzIdx = i%12;
-    csv += `${i},${tiangan[tgIdx]+dizhi[dzIdx]},${tiangan[tgIdx]},${dizhi[dzIdx]}\n`;
-  }
-  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = 'jiazi_table.csv'; a.click();
-});
 
 /* ----------------- 太阳显示（精确） ----------------- */
 function buildSun(){
   groups.sun.clear && groups.sun.clear();
   const sunMesh = new THREE.Mesh(new THREE.SphereGeometry(R*0.06, 24, 16), new THREE.MeshBasicMaterial({color:0xffd24d}));
   groups.sun.add(sunMesh);
-  const sunLabel = makeCanvasLabel('太阳', 18, '#b36b18');
+  const sunLabel = makeScreenLabel('太阳', 22, '#fde68a');
   sunLabel.position.set(0, R*0.06*2, 0); groups.sun.add(sunLabel);
 }
 buildSun();
@@ -407,6 +412,7 @@ const dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(200,300,20
 
 /* ----------------- 星表加载（本地 & online fetch placeholder） ----------------- */
 function parseStarsCSV(text){
+  clearScreenLabels(groups.stars);
   groups.stars.clear && (groups.stars.clear());
   const lines = text.split(/\r?\n/).filter(l=>l.trim());
   let start=0;
@@ -421,10 +427,10 @@ function parseStarsCSV(text){
     const mag = parseFloat(cols[3] || '6');
     if(ra==null || dec==null) continue;
     const pos = radecToVec(ra, dec, R*0.995);
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.6, 3 - mag/2), 8,6), new THREE.MeshBasicMaterial({color:0x111111}));
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.6, 3 - mag/2), 8,6), new THREE.MeshBasicMaterial({color:0xffffff}));
     dot.position.copy(pos); dot.userData = {name, raDeg:ra, decDeg:dec, mag};
     groups.stars.add(dot);
-    const label = makeCanvasLabel(name, 12, '#222'); label.position.copy(pos.clone().multiplyScalar(1.02)); groups.stars.add(label);
+    const label = makeScreenLabel(name, 16, '#e2e8f0'); label.position.copy(pos.clone().multiplyScalar(1.02)); groups.stars.add(label);
   }
 }
 
@@ -514,6 +520,36 @@ function updateHUD(){
 updateHUD();
 setInterval(updateHUD, 1000);
 
+const labelWorldPosition = new THREE.Vector3();
+const labelScreenPosition = new THREE.Vector3();
+function isObjectVisible(object){
+  for(let node=object;node;node=node.parent){
+    if(!node.visible) return false;
+  }
+  return true;
+}
+function updateScreenLabels(){
+  scene.updateMatrixWorld(true);
+  camera.updateMatrixWorld(true);
+  const width = renderer.domElement.clientWidth;
+  const height = renderer.domElement.clientHeight;
+  screenLabels.forEach(({anchor,element})=>{
+    if(!isObjectVisible(anchor)){
+      element.style.display = 'none';
+      return;
+    }
+    anchor.getWorldPosition(labelWorldPosition);
+    labelScreenPosition.copy(labelWorldPosition).project(camera);
+    if(labelScreenPosition.z < -1 || labelScreenPosition.z > 1){
+      element.style.display = 'none';
+      return;
+    }
+    element.style.display = '';
+    element.style.left = (labelScreenPosition.x * 0.5 + 0.5) * width + 'px';
+    element.style.top = (-labelScreenPosition.y * 0.5 + 0.5) * height + 'px';
+  });
+}
+
 let lastTime = performance.now();
 function animate(){
   requestAnimationFrame(animate);
@@ -543,12 +579,13 @@ function animate(){
   // xiu labels
   const showXiuLabels = document.getElementById('show28xiuLabels').checked;
   groups.xiu.children.forEach(ch=>{
-    if(ch.type === 'Sprite') ch.visible = showXiuLabels;
+    if(ch.userData.labelElement) ch.visible = showXiuLabels;
   });
   groups.jiazi.visible = document.getElementById('showJiazi').checked;
   groups.sun.visible = document.getElementById('showSun').checked;
 
   controls.update();
+  updateScreenLabels();
   renderer.render(scene, camera);
 }
 animate();

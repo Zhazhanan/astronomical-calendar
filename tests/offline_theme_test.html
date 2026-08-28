@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Offline theme browser test</title>
+<style>
+  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; }
+  #target { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; }
+  #result { position: fixed; right: 12px; bottom: 12px; z-index: 10; max-width: 420px; padding: 12px;
+    color: #fff; background: rgba(127, 29, 29, 0.94); border-radius: 8px; white-space: pre-wrap; }
+  #result[data-status="pass"] { background: rgba(20, 83, 45, 0.94); }
+</style>
+</head>
+<body>
+<iframe id="target" src="../tiangan_dizhi_offline.html"></iframe>
+<pre id="result" data-status="pending">主题检查运行中…</pre>
+<script>
+const frame = document.getElementById('target');
+const result = document.getElementById('result');
+
+function parseColor(value){
+  const parts = value.match(/[\d.]+/g).map(Number);
+  return {r:parts[0], g:parts[1], b:parts[2], a:parts.length > 3 ? parts[3] : 1};
+}
+
+function luminance(color){
+  return 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
+}
+
+frame.addEventListener('load', ()=>{
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    const doc = frame.contentDocument;
+    const bodyStyle = getComputedStyle(doc.body);
+    const uiStyle = getComputedStyle(doc.getElementById('ui'));
+    const hudStyle = getComputedStyle(doc.getElementById('hud'));
+    const labelStyle = getComputedStyle(doc.querySelector('#ui label'));
+    const buttonStyle = getComputedStyle(doc.getElementById('resetBtn'));
+    const screenLabels = [...doc.querySelectorAll('#labelLayer .space-label')];
+    const smallestScreenLabel = screenLabels.length
+      ? Math.min(...screenLabels.map(label=>parseFloat(getComputedStyle(label).fontSize)))
+      : 0;
+    const checks = [
+      ['页面采用深色背景', luminance(parseColor(bodyStyle.backgroundColor)) <= 32],
+      ['控制面板采用浅色文字', luminance(parseColor(uiStyle.color)) >= 210],
+      ['数据面板采用浅色文字', luminance(parseColor(hudStyle.color)) >= 210],
+      ['控制标签字号至少 14px', parseFloat(labelStyle.fontSize) >= 14],
+      ['按钮高度至少 36px', parseFloat(buttonStyle.height) >= 36],
+      ['Three.js 画布正常创建', Boolean(doc.querySelector('#canvasContainer canvas'))],
+      ['天球文字使用屏幕空间标签', screenLabels.length >= 75],
+      ['天球文字最小字号至少 14px', smallestScreenLabel >= 14],
+    ];
+    const failures = checks.filter(([, passed])=>!passed).map(([name])=>'FAIL: ' + name);
+    result.dataset.status = failures.length ? 'fail' : 'pass';
+    result.textContent = failures.length ? failures.join('\n') : 'PASS: 深色星空主题可读性检查通过';
+  }));
+});
+
+setTimeout(()=>{
+  if(result.dataset.status === 'pending'){
+    result.dataset.status = 'fail';
+    result.textContent = 'FAIL: 页面未在规定时间内完成加载';
+  }
+}, 10000);
+</script>
+</body>
+</html>
