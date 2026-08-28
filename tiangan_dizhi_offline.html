@@ -65,6 +65,8 @@
 
   <label><input id="showJiazi" type="checkbox" checked> 显示六十甲子连线</label>
   <label><input id="showSun" type="checkbox" checked> 显示太阳（精确位置）</label>
+  <label><input id="showSolarAngle" type="checkbox" checked> 显示太阳黄经角度</label>
+  <div class="small">白色虚线：春分 0° 基准；橙线：地球指向太阳；黄色弧：当前太阳黄经角。</div>
 
   <div style="margin-top:8px">
     <button id="resetBtn" class="btn">重置视角</button>
@@ -87,6 +89,7 @@
   <div id="localTime">本地时间: —</div>
   <div id="utcTime">UTC: —</div>
   <div id="solarLon">太阳黄经 (λ): —</div>
+  <div id="solarAngleValue">地球—太阳黄经角: —</div>
   <div id="currentJieqi">当前节气: —</div>
   <div id="toNextJieqi">距下节气: —</div>
   <div id="sunCoords">太阳赤经/赤纬: —</div>
@@ -97,6 +100,7 @@
 <!-- 本地 three + OrbitControls（UMD 非 module） -->
 <script src="./three.min.js"></script>
 <script src="./OrbitControls.js"></script>
+<script src="js/astronomy-core.js"></script>
 
 <script>
 /* ----------------- 场景与群组 ------------------ */
@@ -120,7 +124,7 @@ const groups = {
   ecliptic: new THREE.Group(), equator: new THREE.Group(), galactic: new THREE.Group(),
   tiangan: new THREE.Group(), dizhi: new THREE.Group(), jieqi: new THREE.Group(),
   xiu: new THREE.Group(), jiazi: new THREE.Group(), stars: new THREE.Group(),
-  sun: new THREE.Group(), earthmoon: new THREE.Group()
+  sun: new THREE.Group(), solarAngle: new THREE.Group(), earthmoon: new THREE.Group()
 };
 Object.values(groups).forEach(g=>scene.add(g));
 
@@ -153,6 +157,13 @@ Object.values(groups).forEach(g=>scene.add(g));
 /* constants */
 const R = 200;
 const obliquity = 23.43929111 * Math.PI/180;
+
+function toVector3(point){
+  return new THREE.Vector3(point.x, point.y, point.z);
+}
+function eclipticVector(longitudeDeg, radius=R){
+  return toVector3(AstroEducation.Astronomy.tiltedDisplayPoint(longitudeDeg, radius, obliquity));
+}
 
 /* screen-space labels stay legible regardless of camera distance */
 const labelLayer = document.getElementById('labelLayer');
@@ -260,11 +271,7 @@ function eclipticToEquatorial(lonDeg, latDeg=0, obl=radToDeg(obliquity)){
 (function buildEcliptic(){
   const pts=[];
   for(let a=0;a<360;a+=1){
-    const lon = degToRad(a);
-    const x = Math.cos(lon);
-    const y = Math.sin(lon)*Math.cos(obliquity);
-    const z = Math.sin(lon)*Math.sin(obliquity);
-    pts.push(new THREE.Vector3(x*R, y*R, z*R));
+    pts.push(eclipticVector(a, R));
   }
   const geom = new THREE.BufferGeometry().setFromPoints(pts);
   const line = new THREE.Line(geom, new THREE.LineBasicMaterial({color:0xfacc15, linewidth:1, opacity:1}));
@@ -300,13 +307,11 @@ function eclipticToEquatorial(lonDeg, latDeg=0, obl=radToDeg(obliquity)){
 groups.galactic.visible = false;
 
 /* ----------------- 二十四节气（环上标签） ----------------- */
-const jieqiNames = ['立春','雨水','惊蛰','春分','清明','谷雨','立夏','小满','芒种','夏至','小暑','大暑','立秋','处暑','白露','秋分','寒露','霜降','立冬','小雪','大雪','冬至','小寒','大寒'];
+const jieqiNames = AstroEducation.Astronomy.SOLAR_TERMS;
 (function buildJieqi(){
   const r = R * 0.92;
   for(let i=0;i<24;i++){
-    const ang = i/24 * Math.PI*2;
-    const x = Math.cos(ang), y=Math.sin(ang)*Math.cos(obliquity), z=Math.sin(ang)*Math.sin(obliquity);
-    const pos = new THREE.Vector3(x*r,y*r,z*r);
+    const pos = eclipticVector(i * 15, r);
     const lab = makeScreenLabel(jieqiNames[i], 25, "#f8fafc");
     lab.position.copy(pos);
     groups.jieqi.add(lab);
@@ -336,9 +341,7 @@ const xiuNames = ["角","亢","氐","房","心","尾","箕","斗","牛","女","�
 (function build28xiuDefault(){
   const r = R*0.98;
   for(let i=0;i<28;i++){
-    const ang = i/28 * Math.PI*2;
-    const x = Math.cos(ang), y = Math.sin(ang)*Math.cos(obliquity), z = Math.sin(ang)*Math.sin(obliquity);
-    const pos = new THREE.Vector3(x*r, y*r, z*r);
+    const pos = eclipticVector(i / 28 * 360, r);
     const dot = new THREE.Mesh(new THREE.SphereGeometry(2.1,8,6), new THREE.MeshBasicMaterial({color:0xc4b5fd}));
     dot.position.copy(pos); groups.xiu.add(dot);
     const label = makeScreenLabel(xiuNames[i], 23, "#ddd6fe");
@@ -375,18 +378,66 @@ function buildSun(){
 }
 buildSun();
 
+function replaceLinePoints(line, points){
+  line.geometry.dispose();
+  line.geometry = new THREE.BufferGeometry().setFromPoints(points);
+  if(line.computeLineDistances) line.computeLineDistances();
+}
+
+function buildSolarAngleGuide(){
+  const origin = new THREE.Vector3(0,0,0);
+  const referenceEnd = eclipticVector(0, R*0.98);
+  const referenceLine = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([origin, referenceEnd]),
+    new THREE.LineDashedMaterial({color:0xe2e8f0, dashSize:7, gapSize:5, opacity:0.62, transparent:true})
+  );
+  referenceLine.computeLineDistances();
+
+  const sunRay = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([origin, origin]),
+    new THREE.LineBasicMaterial({color:0xfb923c, opacity:0.92, transparent:true})
+  );
+  const angleArc = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([origin, origin]),
+    new THREE.LineBasicMaterial({color:0xfacc15, opacity:0.96, transparent:true})
+  );
+
+  const referenceLabel = makeScreenLabel('0° · 春分基准', 18, '#e2e8f0');
+  referenceLabel.position.copy(eclipticVector(0, R*0.58));
+  const angleLabel = makeScreenLabel('太阳黄经 λ 0.0°', 24, '#fdba74');
+  angleLabel.position.copy(eclipticVector(0, R*0.36));
+
+  groups.solarAngle.add(referenceLine, sunRay, angleArc, referenceLabel, angleLabel);
+  groups.solarAngle.userData = {sunRay, angleArc, angleLabel};
+}
+buildSolarAngleGuide();
+
+function updateSolarAngleGuide(longitudeDeg, sunPosition){
+  const guide = groups.solarAngle.userData;
+  replaceLinePoints(guide.sunRay, [new THREE.Vector3(0,0,0), sunPosition]);
+  const arcPoints = AstroEducation.Astronomy
+    .tiltedLongitudeArcPoints(longitudeDeg, R*0.34, obliquity, 2)
+    .map(toVector3);
+  replaceLinePoints(guide.angleArc, arcPoints);
+  guide.angleLabel.position.copy(eclipticVector(longitudeDeg / 2, R*0.42));
+  guide.angleLabel.userData.labelElement.textContent = '太阳黄经 λ ' + longitudeDeg.toFixed(1) + '°';
+}
+
 function updateSunNow(date){
   const lon = solarLongitudePrecise(date); // deg
   // convert to equatorial coords
   const eq = eclipticToEquatorial(lon, 0, obliquity);
-  const pos = radecToVec(eq.raDeg, eq.decDeg, R*0.98);
+  const pos = eclipticVector(lon, R*0.98);
   groups.sun.position.copy(pos);
+  updateSolarAngleGuide(lon, pos);
   // HUD
   document.getElementById('solarLon').textContent = '太阳黄经 (λ): ' + lon.toFixed(4) + '°';
+  document.getElementById('solarAngleValue').textContent = '地球—太阳黄经角: ' + lon.toFixed(1) + '°（从春分点逆时针）';
   document.getElementById('sunCoords').textContent = `太阳 赤经 ${eq.raDeg.toFixed(4)}°, 赤纬 ${eq.decDeg.toFixed(4)}°`;
   // determine current jieqi index (24 sectors)
-  const sector = Math.floor(lon / 15) % 24;
-  document.getElementById('currentJieqi').textContent = '当前节气区: ' + jieqiNames[sector] + ` (λ in [${(sector*15).toFixed(0)}°,${((sector+1)*15).toFixed(0)}°))`;
+  const currentTerm = AstroEducation.Astronomy.solarTermSectorAtLongitude(lon);
+  const sector = currentTerm.index;
+  document.getElementById('currentJieqi').textContent = '当前节气区: ' + currentTerm.name + ` (λ in [${(sector*15).toFixed(0)}°,${((sector+1)*15).toFixed(0)}°))`;
   // days to next: use JD fractions
   const JD = toJulianDate(date);
   const frac = (lon % 15)/15;
@@ -398,7 +449,7 @@ function updateSunNow(date){
 (function buildEarthMoon(){
   const earth = new THREE.Mesh(new THREE.SphereGeometry(8, 32, 32), new THREE.MeshPhongMaterial({color:0x4b82ff}));
   const earthPivot = new THREE.Group(); earthPivot.add(earth);
-  earth.position.set(-R*0.32, -R*0.6, 0);
+  earth.position.set(0, 0, 0);
   groups.earthmoon.add(earthPivot);
 
   const moon = new THREE.Mesh(new THREE.SphereGeometry(2.2, 24,24), new THREE.MeshPhongMaterial({color:0xcfcfcf}));
@@ -583,6 +634,7 @@ function animate(){
   });
   groups.jiazi.visible = document.getElementById('showJiazi').checked;
   groups.sun.visible = document.getElementById('showSun').checked;
+  groups.solarAngle.visible = document.getElementById('showSolarAngle').checked;
 
   controls.update();
   updateScreenLabels();
