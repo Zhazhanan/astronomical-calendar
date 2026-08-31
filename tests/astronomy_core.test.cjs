@@ -7,6 +7,16 @@ function angularDistance(a, b) {
   return Math.min(delta, 360 - delta);
 }
 
+function vectorMagnitude(vector) {
+  return Math.hypot(vector.x, vector.y, vector.z);
+}
+
+function vectorSeparationDegrees(first, second) {
+  const denominator = vectorMagnitude(first) * vectorMagnitude(second);
+  const cosine = (first.x * second.x + first.y * second.y + first.z * second.z) / denominator;
+  return Math.acos(Math.max(-1, Math.min(1, cosine))) * 180 / Math.PI;
+}
+
 test('Julian day is J2000 at 2000-01-01T12:00:00Z', () => {
   assert.equal(Astronomy.julianDay(Date.UTC(2000, 0, 1, 12)), 2451545);
 });
@@ -62,4 +72,64 @@ test('eclipse-season hint requires both syzygy and a nearby node', () => {
   assert.equal(Astronomy.eclipseSeasonHint(3, 2).possible, true);
   assert.equal(Astronomy.eclipseSeasonHint(90, 2).possible, false);
   assert.equal(Astronomy.eclipseSeasonHint(3, 18).possible, false);
+});
+
+test('Moon state geometry is coherent with its inclined 3D orbit', () => {
+  const moon = Astronomy.moonGeocentricState(Date.UTC(2026, 0, 1));
+  assert.ok(Math.abs(vectorMagnitude(moon.vectorKm) - moon.distanceKm) < 1e-6);
+  assert.ok(Math.abs(moon.latitudeDeg) <= moon.orbit.inclinationDeg + 1e-12);
+  assert.ok(moon.nodeDistanceDeg + 1e-10 >= Math.abs(moon.latitudeDeg));
+
+  const ascendingDirection = {
+    x: Math.cos(moon.ascendingNodeLongitudeDeg * Math.PI / 180),
+    y: 0,
+    z: Math.sin(moon.ascendingNodeLongitudeDeg * Math.PI / 180)
+  };
+  const descendingDirection = {
+    x: Math.cos(moon.descendingNodeLongitudeDeg * Math.PI / 180),
+    y: 0,
+    z: Math.sin(moon.descendingNodeLongitudeDeg * Math.PI / 180)
+  };
+  const ascendingDistance = vectorSeparationDegrees(moon.vectorKm, ascendingDirection);
+  const descendingDistance = vectorSeparationDegrees(moon.vectorKm, descendingDirection);
+  const expectedLabel = ascendingDistance <= descendingDistance ? '升交点' : '降交点';
+  assert.ok(Math.abs(moon.nodeDistanceDeg - Math.min(ascendingDistance, descendingDistance)) < 1e-9);
+  assert.equal(moon.nearestNodeLabel, expectedLabel);
+  assert.ok(Math.abs(moon.perigeeDistanceKm - 384400 * (1 - 0.0549)) < 1e-9);
+  assert.ok(Math.abs(moon.apogeeDistanceKm - 384400 * (1 + 0.0549)) < 1e-9);
+});
+
+test('Moon state derives elongation from supplied Sun and Moon vectors', () => {
+  const instant = Date.UTC(2026, 0, 1);
+  const moon = Astronomy.moonGeocentricState(instant);
+  const sameLongitudeSun = {
+    longitudeDeg: moon.longitudeDeg,
+    vectorAu: {
+      x: Math.cos(moon.longitudeDeg * Math.PI / 180),
+      y: 0,
+      z: Math.sin(moon.longitudeDeg * Math.PI / 180)
+    }
+  };
+  const alignedLongitude = Astronomy.moonGeocentricState(instant, sameLongitudeSun);
+  assert.ok(alignedLongitude.elongationDeg > 0);
+  assert.ok(Math.abs(alignedLongitude.elongationDeg - Math.abs(moon.latitudeDeg)) < 1e-9);
+
+  const suppliedSun = {
+    longitudeDeg: moon.longitudeDeg,
+    vectorAu: { x: 0, y: 1, z: 0 }
+  };
+  const state = Astronomy.moonGeocentricState(instant, suppliedSun);
+  assert.ok(Math.abs(state.elongationDeg - vectorSeparationDegrees(moon.vectorKm, suppliedSun.vectorAu)) < 1e-9);
+  assert.equal(state.illumination, Astronomy.illuminatedFraction(state.elongationDeg));
+  assert.equal(state.phaseName, Astronomy.phaseName(state.elongationDeg));
+});
+
+test('phase and eclipse thresholds handle wraparound and remain cautious', () => {
+  assert.equal(Astronomy.phaseName(352), '朔');
+  assert.equal(Astronomy.phaseName(351), '残月');
+  assert.equal(Astronomy.eclipseSeasonHint(348, 15).possible, true);
+  assert.equal(Astronomy.eclipseSeasonHint(347, 15).possible, false);
+  const hint = Astronomy.eclipseSeasonHint(0, 0);
+  assert.match(hint.message, /可能进入食季/);
+  assert.doesNotMatch(hint.message, /将发生(日食|月食)/);
 });

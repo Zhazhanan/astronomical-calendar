@@ -136,6 +136,17 @@
     return Math.min(difference, 360 - difference);
   }
 
+  function vectorMagnitude(vector) {
+    return Math.hypot(vector.x, vector.y, vector.z);
+  }
+
+  function angularSeparationDegrees(firstVector, secondVector) {
+    const denominator = vectorMagnitude(firstVector) * vectorMagnitude(secondVector);
+    const cosine = (firstVector.x * secondVector.x + firstVector.y * secondVector.y +
+      firstVector.z * secondVector.z) / denominator;
+    return radiansToDegrees(Math.acos(Math.max(-1, Math.min(1, cosine))));
+  }
+
   function illuminatedFraction(elongationDeg) {
     return (1 - Math.cos(degreesToRadians(normalizeDegrees(elongationDeg)))) / 2;
   }
@@ -194,10 +205,18 @@
     const longitudeDeg = normalizeDegrees(radiansToDegrees(Math.atan2(vectorKm.z, vectorKm.x)));
     const latitudeDeg = radiansToDegrees(Math.asin(vectorKm.y / distanceKm));
     const solarState = sunState || solarGeocentricState(instantUtcMs);
-    const elongationDeg = normalizeDegrees(longitudeDeg - solarState.longitudeDeg);
+    const longitudeDirectionDeg = normalizeDegrees(longitudeDeg - solarState.longitudeDeg);
+    const sunMoonSeparationDeg = angularSeparationDegrees(vectorKm, solarState.vectorAu);
+    const elongationDeg = longitudeDirectionDeg <= 180
+      ? sunMoonSeparationDeg
+      : 360 - sunMoonSeparationDeg;
     const descendingNodeLongitudeDeg = normalizeDegrees(ascendingNodeLongitudeDeg + 180);
-    const ascendingNodeDistanceDeg = angularDistanceDegrees(longitudeDeg, ascendingNodeLongitudeDeg);
-    const descendingNodeDistanceDeg = angularDistanceDegrees(longitudeDeg, descendingNodeLongitudeDeg);
+    const ascendingNodeDistanceDeg = angularSeparationDegrees(vectorKm, {
+      x: Math.cos(nodeRad), y: 0, z: Math.sin(nodeRad)
+    });
+    const descendingNodeDistanceDeg = angularSeparationDegrees(vectorKm, {
+      x: -Math.cos(nodeRad), y: 0, z: -Math.sin(nodeRad)
+    });
     const isAscendingNodeNearest = ascendingNodeDistanceDeg <= descendingNodeDistanceDeg;
     const nodeDistanceDeg = Math.min(ascendingNodeDistanceDeg, descendingNodeDistanceDeg);
     const perigeeDistanceKm = lunarSemiMajorAxisKm * (1 - lunarEccentricity);
@@ -210,7 +229,7 @@
       distanceKm,
       elongationDeg,
       illumination: illuminatedFraction(elongationDeg),
-      waxing: elongationDeg > 0 && elongationDeg < 180,
+      waxing: longitudeDirectionDeg > 0 && longitudeDirectionDeg < 180,
       phaseName: phaseName(elongationDeg),
       ascendingNodeLongitudeDeg,
       descendingNodeLongitudeDeg,
