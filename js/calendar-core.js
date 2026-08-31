@@ -11,7 +11,8 @@
   const DEFAULT_TIME_ZONE = 'Asia/Shanghai';
   const MIN_SUPPORTED_YEAR = 1900;
   const MAX_SUPPORTED_YEAR = 2100;
-  const MILLISECONDS_PER_MINUTE = 60000;
+  const MILLISECONDS_PER_HOUR = 60 * 60 * 1000;
+  const OFFSET_SAMPLE_WINDOW = 36 * MILLISECONDS_PER_HOUR;
   const STEMS = Object.freeze(['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸']);
   const BRANCHES = Object.freeze(['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥']);
   const formatterCache = new Map();
@@ -114,6 +115,28 @@
       parts.hour === fields.hour && parts.minute === fields.minute && parts.second === fields.second;
   }
 
+  function offsetMillisecondsAt(instantUtc, timeZone) {
+    const parts = localDateParts(instantUtc, timeZone);
+    const localWallTime = Date.UTC(
+      parts.year,
+      parts.month - 1,
+      parts.day,
+      parts.hour,
+      parts.minute,
+      parts.second
+    );
+    return localWallTime - instantUtc;
+  }
+
+  function candidateOffsets(nominalUtc, timeZone) {
+    const samples = [
+      nominalUtc - OFFSET_SAMPLE_WINDOW,
+      nominalUtc,
+      nominalUtc + OFFSET_SAMPLE_WINDOW
+    ];
+    return [...new Set(samples.map((instantUtc) => offsetMillisecondsAt(instantUtc, timeZone)))];
+  }
+
   function zonedLocalDateTimeToUtc(fields, requestedTimeZone) {
     const zone = resolveTimeZone(requestedTimeZone);
     if (!isValidLocalDateTime(fields)) {
@@ -125,8 +148,8 @@
     }
     const nominalUtc = Date.UTC(fields.year, fields.month - 1, fields.day, fields.hour, fields.minute, fields.second);
     const candidates = [];
-    for (let offsetMinutes = -14 * 60; offsetMinutes <= 14 * 60; offsetMinutes += 1) {
-      const candidate = nominalUtc - offsetMinutes * MILLISECONDS_PER_MINUTE;
+    for (const offsetMilliseconds of candidateOffsets(nominalUtc, zone.timeZone)) {
+      const candidate = nominalUtc - offsetMilliseconds;
       if (sameLocalDateTime(localDateParts(candidate, zone.timeZone), fields)) candidates.push(candidate);
     }
     candidates.sort((first, second) => first - second);

@@ -96,3 +96,28 @@ test('zoned local midnight round-trips through the selected timezone', () => {
   assert.equal(result.warning, null);
   assert.ok(Object.isFrozen(result));
 });
+
+test('historical Shanghai local midnight preserves its second-level UTC offset', () => {
+  const instant = Date.UTC(1899, 11, 31, 15, 54, 17);
+  const result = Calendar.zonedLocalDateTimeToUtc(
+    { year: 1900, month: 1, day: 1, hour: 0, minute: 0, second: 0 },
+    'Asia/Shanghai'
+  );
+  assert.equal(result.instantUtc, instant);
+  assert.equal(result.ambiguity.kind, 'unique');
+  assert.deepEqual(result.ambiguity.candidates, [instant]);
+  assert.deepEqual(
+    Calendar.localDateParts(instant, 'Asia/Shanghai'),
+    {
+      year: 1900,
+      month: 1,
+      day: 1,
+      hour: 0,
+      minute: 0,
+      second: 0,
+      weekday: 'Mon',
+      isoDate: '1900-01-01',
+      timeZone: 'Asia/Shanghai'
+    }
+  );
+});
