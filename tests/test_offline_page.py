@@ -20,13 +20,24 @@ class OfflinePageControlsTest(unittest.TestCase):
     def setUpClass(cls):
         page = Path(__file__).parents[1] / "tiangan_dizhi_offline.html"
         cls.parser = ElementIdParser()
-        cls.parser.feed(page.read_text(encoding="utf-8"))
+        cls.html = page.read_text(encoding="utf-8")
+        cls.parser.feed(cls.html)
 
     def test_keeps_visualization_controls_without_jiazi_table_export(self):
         self.assertIn("showJiazi", self.parser.elements)
         self.assertIn("snapBtn", self.parser.elements)
         self.assertNotIn("ganzhiTable", self.parser.elements)
         self.assertNotIn("exportJiazi", self.parser.elements)
+
+    def test_exposes_solar_longitude_angle_control_and_readout(self):
+        self.assertIn("showSolarAngle", self.parser.elements)
+        self.assertIn("solarAngleValue", self.parser.elements)
+
+    def test_uses_world_state_for_solar_angle_display(self):
+        self.assertIn('js/astronomy-core.js', self.html)
+        self.assertIn('js/world-state.js', self.html)
+        self.assertNotIn('id="solar-angle-core"', self.html)
+        self.assertNotIn('function solarLongitudePrecise', self.html)
 
 
 if __name__ == "__main__":
