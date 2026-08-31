@@ -23,3 +23,20 @@ test('invalid input returns a stable error rather than partial state', () => {
     /finite UTC millisecond/
   );
 });
+
+test('WorldState.create rejects every invalid public instant with its stable TypeError contract', () => {
+  const invalidInstants = [Number.NaN, Infinity, -Infinity, '2026-01-01', undefined];
+
+  for (const invalidInstant of invalidInstants) {
+    assert.throws(
+      () => WorldState.create({ instantUtc: invalidInstant }),
+      (error) => error instanceof TypeError &&
+        error.message === 'instantUtc must be a finite UTC millisecond value'
+    );
+  }
+  assert.throws(
+    () => WorldState.create(),
+    (error) => error instanceof TypeError &&
+      error.message === 'instantUtc must be a finite UTC millisecond value'
+  );
+});

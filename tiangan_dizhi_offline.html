@@ -463,12 +463,14 @@ function updateEarthMoon(worldState, deltaMs){
   if(!worldState) return;
   const {earth, moon} = groups.earthmoon.userData;
   const moonPositionKm = worldState.moon.positionKm;
-  const moonDistanceKm = Math.hypot(moonPositionKm.x, moonPositionKm.y, moonPositionKm.z);
+  const moonDisplayPosition = AstroEducation.Astronomy
+    .rotateCanonicalVectorToDisplay(moonPositionKm, obliquity);
+  const moonDistanceKm = Math.hypot(moonDisplayPosition.x, moonDisplayPosition.y, moonDisplayPosition.z);
   // Distance is normalized only to keep the Moon visible; its WorldState direction is preserved.
   moon.position.set(
-    moonPositionKm.x / moonDistanceKm * MOON_DISPLAY_ORBIT_RADIUS,
-    moonPositionKm.y / moonDistanceKm * MOON_DISPLAY_ORBIT_RADIUS,
-    moonPositionKm.z / moonDistanceKm * MOON_DISPLAY_ORBIT_RADIUS
+    moonDisplayPosition.x / moonDistanceKm * MOON_DISPLAY_ORBIT_RADIUS,
+    moonDisplayPosition.y / moonDistanceKm * MOON_DISPLAY_ORBIT_RADIUS,
+    moonDisplayPosition.z / moonDistanceKm * MOON_DISPLAY_ORBIT_RADIUS
   );
   earth.rotation.y += 0.0003 * deltaMs; // rendering-only spin, not astronomy state
   moon.rotation.y += 0.0005 * deltaMs;

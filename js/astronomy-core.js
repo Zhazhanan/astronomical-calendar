@@ -8,12 +8,12 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const SOLAR_TERMS = [
+  const SOLAR_TERMS = Object.freeze([
     '春分', '清明', '谷雨', '立夏', '小满', '芒种',
     '夏至', '小暑', '大暑', '立秋', '处暑', '白露',
     '秋分', '寒露', '霜降', '立冬', '小雪', '大雪',
     '冬至', '小寒', '大寒', '立春', '雨水', '惊蛰'
-  ];
+  ]);
   const J2000_JULIAN_DAY = 2451545;
   const MILLISECONDS_PER_DAY = 86400000;
   const TEACHING_OBLIQUITY_DEG = 23.43928;
@@ -269,13 +269,23 @@
     return points;
   }
 
+  function rotateCanonicalVectorToDisplay(vector, tiltRad) {
+    const cosine = Math.cos(tiltRad);
+    const sine = Math.sin(tiltRad);
+    return {
+      x: vector.x,
+      y: vector.y * cosine + vector.z * sine,
+      z: vector.z * cosine - vector.y * sine
+    };
+  }
+
   function tiltedDisplayPoint(longitudeDeg, radius, tiltRad) {
     const longitude = normalizeDegrees(longitudeDeg) * Math.PI / 180;
-    return {
+    return rotateCanonicalVectorToDisplay({
       x: Math.cos(longitude) * radius,
-      y: Math.sin(longitude) * Math.sin(tiltRad) * radius,
-      z: Math.sin(longitude) * Math.cos(tiltRad) * radius
-    };
+      y: 0,
+      z: Math.sin(longitude) * radius
+    }, tiltRad);
   }
 
   function tiltedLongitudeArcPoints(longitudeDeg, radius, tiltRad, stepDeg) {
@@ -305,6 +315,7 @@
     solarTermAtLongitude,
     solarTermSectorAtLongitude,
     longitudeArcPoints,
+    rotateCanonicalVectorToDisplay,
     tiltedDisplayPoint,
     tiltedLongitudeArcPoints
   });

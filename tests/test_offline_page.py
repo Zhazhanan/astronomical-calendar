@@ -41,6 +41,7 @@ class OfflinePageControlsTest(unittest.TestCase):
 
     def test_uses_world_state_moon_position_without_wall_clock_orbit(self):
         self.assertIn('worldState.moon.positionKm', self.html)
+        self.assertIn('rotateCanonicalVectorToDisplay(moonPositionKm, obliquity)', self.html)
         self.assertNotIn('performance.now() * s.speed', self.html)
 
 

@@ -8,6 +8,16 @@ function assertNear(actual, expected, message) {
   assert.ok(Math.abs(actual - expected) < 1e-9, `${message}: expected ${expected}, got ${actual}`);
 }
 
+function vectorMagnitude(vector) {
+  return Math.hypot(vector.x, vector.y, vector.z);
+}
+
+function vectorSeparationDegrees(first, second) {
+  const denominator = vectorMagnitude(first) * vectorMagnitude(second);
+  const cosine = (first.x * second.x + first.y * second.y + first.z * second.z) / denominator;
+  return Math.acos(Math.max(-1, Math.min(1, cosine))) * 180 / Math.PI;
+}
+
 test('normalizes angles into [0, 360)', () => {
   assert.equal(Astronomy.normalizeDegrees(-15), 345);
   assert.equal(Astronomy.normalizeDegrees(375), 15);
@@ -47,6 +57,33 @@ test('maps cardinal solar longitudes onto the tilted display plane', () => {
   assertNear(autumn.z, 0, '180° z');
 });
 
+test('rotates canonical ecliptic vectors into the shared tilted display frame', () => {
+  const tilt = 23.43929111 * Math.PI / 180;
+  const canonicalNode = { x: 0, y: 0, z: 10 };
+  const displayNode = Astronomy.rotateCanonicalVectorToDisplay(canonicalNode, tilt);
+  const eclipticPoint = Astronomy.tiltedDisplayPoint(90, 10, tilt);
+
+  assertNear(displayNode.x, eclipticPoint.x, 'node x follows ecliptic plane');
+  assertNear(displayNode.y, eclipticPoint.y, 'node y follows ecliptic plane');
+  assertNear(displayNode.z, eclipticPoint.z, 'node z follows ecliptic plane');
+});
+
+test('display-frame rotation preserves vector magnitude and angular separation', () => {
+  const tilt = 23.43929111 * Math.PI / 180;
+  const first = { x: 3, y: -4, z: 12 };
+  const second = { x: -5, y: 8, z: 2 };
+  const rotatedFirst = Astronomy.rotateCanonicalVectorToDisplay(first, tilt);
+  const rotatedSecond = Astronomy.rotateCanonicalVectorToDisplay(second, tilt);
+
+  assertNear(vectorMagnitude(rotatedFirst), vectorMagnitude(first), 'first magnitude');
+  assertNear(vectorMagnitude(rotatedSecond), vectorMagnitude(second), 'second magnitude');
+  assertNear(
+    vectorSeparationDegrees(rotatedFirst, rotatedSecond),
+    vectorSeparationDegrees(first, second),
+    'angular separation'
+  );
+});
+
 test('builds a tilted solar-longitude arc whose endpoint follows the sun direction', () => {
   const tilt = 23.43929111 * Math.PI / 180;
   const points = Astronomy.tiltedLongitudeArcPoints(90, 10, tilt, 30);
@@ -78,4 +115,10 @@ test('labels solar-angle values as teaching approximations only', () => {
   assert.match(html, /仅用于可视化与教育展示/);
   assert.match(html, /不可用于导航或日食、月食预测/);
   assert.doesNotMatch(html, /精确天文算法|精确位置/);
+});
+
+test('solar terms are immutable public constants', () => {
+  assert.equal(Object.isFrozen(Astronomy.SOLAR_TERMS), true);
+  assert.throws(() => Astronomy.SOLAR_TERMS.push('伪造节气'), TypeError);
+  assert.equal(Astronomy.SOLAR_TERMS[0], '春分');
 });

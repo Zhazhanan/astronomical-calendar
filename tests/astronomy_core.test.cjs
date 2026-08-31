@@ -17,6 +17,27 @@ function vectorSeparationDegrees(first, second) {
   return Math.acos(Math.max(-1, Math.min(1, cosine))) * 180 / Math.PI;
 }
 
+test('public instant APIs reject invalid instants with one stable TypeError contract', () => {
+  const invalidInstants = [Number.NaN, Infinity, -Infinity, '2026-01-01', undefined];
+  const instantApis = [
+    Astronomy.julianDay,
+    Astronomy.centuriesSinceJ2000,
+    Astronomy.earthHeliocentricState,
+    Astronomy.solarGeocentricState,
+    Astronomy.moonGeocentricState
+  ];
+
+  for (const instantApi of instantApis) {
+    for (const invalidInstant of invalidInstants) {
+      assert.throws(
+        () => instantApi(invalidInstant),
+        (error) => error instanceof TypeError &&
+          error.message === 'instantUtcMs must be a finite UTC millisecond value'
+      );
+    }
+  }
+});
+
 test('Julian day is J2000 at 2000-01-01T12:00:00Z', () => {
   assert.equal(Astronomy.julianDay(Date.UTC(2000, 0, 1, 12)), 2451545);
 });
