@@ -38,21 +38,56 @@
 
   function isPlainNonEmptyObject(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-    const prototype = Object.getPrototypeOf(value);
-    return (prototype === Object.prototype || prototype === null) && Object.keys(value).length > 0;
+    try {
+      const prototype = Object.getPrototypeOf(value);
+      return (prototype === Object.prototype || prototype === null) && Object.keys(value).length > 0;
+    } catch (error) {
+      return false;
+    }
   }
 
-  function rejectedInputSnapshot(value) {
-    if (value === null || value === undefined || typeof value !== 'object') return value;
-    if (Array.isArray(value)) return value.map((item) => rejectedInputSnapshot(item));
-    if (isPlainNonEmptyObject(value)) {
-      const snapshot = {};
-      Object.keys(value).forEach((key) => {
-        snapshot[key] = rejectedInputSnapshot(value[key]);
-      });
-      return snapshot;
+  function ownDataProperty(value, key) {
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      return descriptor && Object.prototype.hasOwnProperty.call(descriptor, 'value')
+        ? { found: true, value: descriptor.value }
+        : { found: false, value: undefined };
+    } catch (error) {
+      return { found: false, value: undefined };
     }
-    return String(value);
+  }
+
+  function rejectedInputSnapshot(value, seen) {
+    if (value === null || typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean') return value;
+    if (value === undefined) return { type: 'undefined' };
+    if (typeof value === 'bigint') return { type: 'bigint', value: value.toString() };
+    if (typeof value === 'symbol') return { type: 'symbol', value: String(value) };
+    if (typeof value === 'function') return { type: 'function', value: value.name || '[anonymous]' };
+    if (typeof value !== 'object') return { type: typeof value, value: String(value) };
+
+    const visited = seen || new WeakSet();
+    if (visited.has(value)) return '[Circular]';
+    visited.add(value);
+    let keys;
+    try {
+      keys = Object.keys(value);
+    } catch (error) {
+      return { type: 'object', value: '[Unserializable object]' };
+    }
+    const snapshot = Array.isArray(value) ? [] : {};
+    for (const key of keys) {
+      let descriptor;
+      try {
+        descriptor = Object.getOwnPropertyDescriptor(value, key);
+      } catch (error) {
+        snapshot[key] = '[Unreadable]';
+        continue;
+      }
+      snapshot[key] = descriptor && Object.prototype.hasOwnProperty.call(descriptor, 'value')
+        ? rejectedInputSnapshot(descriptor.value, visited)
+        : '[Accessor]';
+    }
+    return snapshot;
   }
 
   function degreesToRadians(degrees) {
@@ -83,11 +118,14 @@
   }
 
   function resolveLocation(input) {
-    if (isPlainNonEmptyObject(input) && isValidCoordinate(input.latitudeDeg, input.longitudeDeg)) {
-      const latitudeDeg = input.latitudeDeg;
-      const longitudeDeg = input.longitudeDeg;
+    const latitude = isPlainNonEmptyObject(input) ? ownDataProperty(input, 'latitudeDeg') : { found: false };
+    const longitude = isPlainNonEmptyObject(input) ? ownDataProperty(input, 'longitudeDeg') : { found: false };
+    if (latitude.found && longitude.found && isValidCoordinate(latitude.value, longitude.value)) {
+      const latitudeDeg = latitude.value;
+      const longitudeDeg = longitude.value;
+      const name = ownDataProperty(input, 'name');
       return freeze({
-        location: { name: typeof input.name === 'string' && input.name ? input.name : '自定义地点', latitudeDeg, longitudeDeg },
+        location: { name: name.found && typeof name.value === 'string' && name.value ? name.value : '自定义地点', latitudeDeg, longitudeDeg },
         warning: null,
         rejectedInput: null
       });

@@ -20,6 +20,39 @@ test('non-object location input falls back without losing serializable rejected 
   }
 });
 
+test('unsafe rejected locations are serialized without throwing', () => {
+  const circular = { name: '循环', latitudeDeg: 98, longitudeDeg: 116 };
+  circular.self = circular;
+  const inputs = [
+    [undefined, { type: 'undefined' }],
+    [12n, { type: 'bigint', value: '12' }],
+    [Symbol('地点'), { type: 'symbol', value: 'Symbol(地点)' }],
+    [function locationInput() {}, { type: 'function', value: 'locationInput' }],
+    [circular, { name: '循环', latitudeDeg: 98, longitudeDeg: 116, self: '[Circular]' }]
+  ];
+  for (const [input, expectedSnapshot] of inputs) {
+    assert.doesNotThrow(() => Observer.resolveLocation(input));
+    const result = Observer.resolveLocation(input);
+    assert.equal(result.location.name, '北京');
+    assert.equal(result.warning.code, 'INVALID_LOCATION');
+    assert.deepEqual(result.rejectedInput, expectedSnapshot);
+    assert.doesNotThrow(() => JSON.stringify(result));
+  }
+});
+
+test('location validation and snapshots do not invoke throwing getters', () => {
+  const input = { longitudeDeg: 116 };
+  Object.defineProperty(input, 'latitudeDeg', {
+    enumerable: true,
+    get() { throw new Error('must not read getter'); }
+  });
+  const result = Observer.resolveLocation(input);
+  assert.equal(result.location.name, '北京');
+  assert.equal(result.warning.code, 'INVALID_LOCATION');
+  assert.deepEqual(result.rejectedInput, { longitudeDeg: 116, latitudeDeg: '[Accessor]' });
+  assert.doesNotThrow(() => JSON.stringify(result));
+});
+
 test('equinox daylight is close to twelve hours near the equator', () => {
   const state = Observer.observerState({
     instantUtc: Date.UTC(2026, 2, 20, 12),
