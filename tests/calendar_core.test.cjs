@@ -1,7 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const Astronomy = require('../js/astronomy-core.js');
 const lunarApi = require('../vendor/lunar/lunar.js');
 const Calendar = require('../js/calendar-core.js');
+
+function angularDistance(a, b) {
+  const delta = Math.abs(Astronomy.normalizeDegrees(a - b));
+  return Math.min(delta, 360 - delta);
+}
 
 test('Gregorian leap-year and month lengths are correct', () => {
   assert.equal(Calendar.isLeapYear(2000), true);
@@ -120,4 +126,79 @@ test('historical Shanghai local midnight preserves its second-level UTC offset',
       timeZone: 'Asia/Shanghai'
     }
   );
+});
+
+test('2026 contains 24 ordered solar-longitude crossings', () => {
+  const terms = Calendar.solarTermsForGregorianYear(2026, Astronomy);
+  assert.equal(terms.length, 24);
+  for (let index = 1; index < terms.length; index += 1) {
+    assert.ok(terms[index].instantUtc > terms[index - 1].instantUtc);
+  }
+  for (const term of terms) {
+    const longitude = Astronomy.solarGeocentricState(term.instantUtc).longitudeDeg;
+    assert.ok(angularDistance(longitude, term.longitudeDeg) < 0.001);
+  }
+});
+
+test('2026 spring equinox is solved inside the expected UTC day', () => {
+  const term = Calendar.solarTermsForGregorianYear(2026, Astronomy)
+    .find((item) => item.name === '春分');
+  assert.ok(term.instantUtc >= Date.UTC(2026, 2, 20));
+  assert.ok(term.instantUtc < Date.UTC(2026, 2, 21));
+});
+
+test('annual timeline uses one normalized UTC scale for all rows', () => {
+  const timeline = Calendar.annualTimeline(2026, 'Asia/Shanghai', Astronomy, lunarApi);
+  assert.equal(timeline.gregorian.length, 12);
+  assert.equal(timeline.solarTerms.length, 24);
+  assert.ok(timeline.lunarMonths.length >= 12 && timeline.lunarMonths.length <= 14);
+  for (const row of [timeline.gregorian, timeline.solarTerms, timeline.lunarMonths]) {
+    for (const segment of row) {
+      assert.ok(segment.startRatio >= 0 && segment.startRatio <= 1);
+    }
+  }
+});
+
+test('principal lunar phases are solved from Sun-Moon elongation', () => {
+  const phases = Calendar.principalMoonPhasesForInterval(
+    Date.UTC(2026, 0, 1),
+    Date.UTC(2026, 2, 1),
+    Astronomy
+  );
+  assert.ok(phases.length >= 7 && phases.length <= 9);
+  for (const phase of phases) {
+    const sun = Astronomy.solarGeocentricState(phase.instantUtc);
+    const moon = Astronomy.moonGeocentricState(phase.instantUtc, sun);
+    assert.ok(angularDistance(moon.elongationDeg, phase.elongationDeg) < 0.01);
+  }
+});
+
+test('solar term cache returns frozen independent values', () => {
+  const first = Calendar.solarTermsForGregorianYear(2026, Astronomy);
+  const second = Calendar.solarTermsForGregorianYear(2026, Astronomy);
+  assert.notEqual(first, second);
+  assert.notEqual(first[0], second[0]);
+  assert.ok(Object.isFrozen(first));
+  assert.ok(Object.isFrozen(first[0]));
+});
+
+test('solar crossing reports an explicit bracket failure when the interval has none', () => {
+  const crossing = Calendar.findSolarLongitudeCrossing({
+    startUtc: Date.UTC(2026, 0, 1),
+    endUtc: Date.UTC(2026, 0, 2),
+    targetLongitudeDeg: 180
+  }, Astronomy);
+  assert.equal(crossing, null);
+});
+
+test('calendar state exposes the Spring Festival and Li Chun Ganzhi difference', () => {
+  const state = Calendar.calendarState({
+    instantUtc: Date.UTC(2026, 1, 10),
+    timeZone: 'Asia/Shanghai',
+    Astronomy,
+    lunarApi
+  });
+  assert.equal(state.ganzhi.springFestival.name, '乙巳');
+  assert.equal(state.ganzhi.liChun.name, '丙午');
+  assert.equal(state.ganzhi.differs, true);
 });

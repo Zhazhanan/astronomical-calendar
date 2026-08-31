@@ -15,7 +15,12 @@
   const OFFSET_SAMPLE_WINDOW = 36 * MILLISECONDS_PER_HOUR;
   const STEMS = Object.freeze(['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸']);
   const BRANCHES = Object.freeze(['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥']);
+  const SOLAR_TERM_SAMPLE_MS = 6 * MILLISECONDS_PER_HOUR;
+  const SOLAR_TERM_TOLERANCE_MS = 1000;
+  const PHASE_TOLERANCE_MS = 60 * 1000;
+  const MILLISECONDS_PER_DAY = 24 * MILLISECONDS_PER_HOUR;
   const formatterCache = new Map();
+  const solarTermsCache = new Map();
 
   function freeze(value) {
     if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -245,6 +250,258 @@
     });
   }
 
+  function signedAngleDifference(valueDeg, targetDeg) {
+    return ((valueDeg - targetDeg + 540) % 360) - 180;
+  }
+
+  function cloneFrozen(value) {
+    if (Array.isArray(value)) return freeze(value.map((item) => cloneFrozen(item)));
+    if (value && typeof value === 'object') {
+      const copy = {};
+      Object.keys(value).forEach((key) => { copy[key] = cloneFrozen(value[key]); });
+      return freeze(copy);
+    }
+    return value;
+  }
+
+  function assertAstronomy(Astronomy) {
+    if (!Astronomy || typeof Astronomy.solarGeocentricState !== 'function' ||
+      typeof Astronomy.moonGeocentricState !== 'function') {
+      throw new TypeError('Astronomy must provide solarGeocentricState and moonGeocentricState');
+    }
+  }
+
+  function findForwardCrossing(options, sampleValue, toleranceMs) {
+    const startUtc = options && options.startUtc;
+    const endUtc = options && options.endUtc;
+    const targetDeg = options && options.targetLongitudeDeg;
+    if (!Number.isFinite(startUtc) || !Number.isFinite(endUtc) || startUtc >= endUtc || !Number.isFinite(targetDeg)) {
+      throw new TypeError('crossing options require finite startUtc, endUtc, and targetLongitudeDeg');
+    }
+    let lowUtc = startUtc;
+    let lowDifference = signedAngleDifference(sampleValue(lowUtc), targetDeg);
+    for (let sampleUtc = Math.min(lowUtc + SOLAR_TERM_SAMPLE_MS, endUtc);
+      sampleUtc <= endUtc; sampleUtc = Math.min(sampleUtc + SOLAR_TERM_SAMPLE_MS, endUtc)) {
+      const highDifference = signedAngleDifference(sampleValue(sampleUtc), targetDeg);
+      if (lowDifference <= 0 && highDifference >= 0 && !(lowDifference === highDifference)) {
+        let highUtc = sampleUtc;
+        while (highUtc - lowUtc > toleranceMs) {
+          const middleUtc = Math.floor((lowUtc + highUtc) / 2);
+          const middleDifference = signedAngleDifference(sampleValue(middleUtc), targetDeg);
+          if (middleDifference >= 0) highUtc = middleUtc;
+          else lowUtc = middleUtc;
+        }
+        return Math.round((lowUtc + highUtc) / 2);
+      }
+      if (sampleUtc === endUtc) break;
+      lowUtc = sampleUtc;
+      lowDifference = highDifference;
+    }
+    return null;
+  }
+
+  function findSolarLongitudeCrossing(options, Astronomy) {
+    assertAstronomy(Astronomy);
+    const instantUtc = findForwardCrossing(
+      options,
+      (instant) => Astronomy.solarGeocentricState(instant).longitudeDeg,
+      SOLAR_TERM_TOLERANCE_MS
+    );
+    return instantUtc === null ? null : freeze({
+      instantUtc,
+      longitudeDeg: ((options.targetLongitudeDeg % 360) + 360) % 360
+    });
+  }
+
+  function solarTermsForGregorianYear(year, Astronomy) {
+    if (!Number.isInteger(year)) throw new TypeError('year must be an integer');
+    assertAstronomy(Astronomy);
+    const cached = solarTermsCache.get(year);
+    if (cached) return cloneFrozen(cached);
+    const searchStart = Date.UTC(year, 0, 1) - 5 * MILLISECONDS_PER_DAY;
+    const searchEnd = Date.UTC(year + 1, 0, 1) + 5 * MILLISECONDS_PER_DAY;
+    const names = Astronomy.SOLAR_TERMS || [];
+    if (names.length !== 24) throw new TypeError('Astronomy.SOLAR_TERMS must contain 24 terms');
+    const terms = names.map((name, index) => {
+      const crossing = findSolarLongitudeCrossing({
+        startUtc: searchStart,
+        endUtc: searchEnd,
+        targetLongitudeDeg: index * 15
+      }, Astronomy);
+      if (!crossing || crossing.instantUtc < Date.UTC(year, 0, 1) || crossing.instantUtc >= Date.UTC(year + 1, 0, 1)) {
+        throw new Error(`unable to solve ${name} for Gregorian year ${year}`);
+      }
+      return freeze({ name, longitudeDeg: index * 15, instantUtc: crossing.instantUtc });
+    }).sort((first, second) => first.instantUtc - second.instantUtc);
+    if (terms.length !== 24 || new Set(terms.map((term) => term.longitudeDeg)).size !== 24) {
+      throw new Error(`expected 24 unique solar terms for Gregorian year ${year}`);
+    }
+    const immutable = freeze(terms);
+    solarTermsCache.set(year, immutable);
+    return cloneFrozen(immutable);
+  }
+
+  function currentAndNextSolarTerm(instantUtc, yearTerms, nextYearTerms) {
+    assertFiniteInstant(instantUtc);
+    const all = (yearTerms || []).concat(nextYearTerms || []).slice()
+      .sort((first, second) => first.instantUtc - second.instantUtc);
+    if (!all.length) return freeze({ current: null, next: null, millisecondsRemaining: null });
+    let current = null;
+    let next = null;
+    for (const term of all) {
+      if (term.instantUtc <= instantUtc) current = term;
+      if (term.instantUtc > instantUtc) {
+        next = term;
+        break;
+      }
+    }
+    return freeze({
+      current: current ? cloneFrozen(current) : null,
+      next: next ? cloneFrozen(next) : null,
+      millisecondsRemaining: next ? next.instantUtc - instantUtc : null
+    });
+  }
+
+  function principalMoonPhasesForInterval(startUtc, endUtc, Astronomy) {
+    assertAstronomy(Astronomy);
+    assertFiniteInstant(startUtc);
+    assertFiniteInstant(endUtc);
+    if (startUtc >= endUtc) throw new RangeError('phase interval endUtc must be after startUtc');
+    const phaseNames = ['朔', '上弦', '望', '下弦'];
+    const phases = [];
+    const elongationAt = (instant) => {
+      const sun = Astronomy.solarGeocentricState(instant);
+      return Astronomy.moonGeocentricState(instant, sun).elongationDeg;
+    };
+    // The inclined 3D orbit means conjunction and opposition do not normally
+    // reach an exact 0°/180° separation.  For those two named phases, solve
+    // the closest model approach; quadratures remain ordinary crossings.
+    for (const target of [90, 270]) {
+      let cursor = startUtc;
+      while (cursor < endUtc) {
+        const instantUtc = findForwardCrossing({
+          startUtc: cursor,
+          endUtc,
+          targetLongitudeDeg: target
+        }, elongationAt, PHASE_TOLERANCE_MS);
+        if (instantUtc === null) break;
+        phases.push(freeze({ name: phaseNames[target / 90], elongationDeg: elongationAt(instantUtc), targetElongationDeg: target, instantUtc }));
+        cursor = instantUtc + PHASE_TOLERANCE_MS;
+      }
+    }
+    for (const target of [0, 180]) {
+      const distanceAt = (instant) => Math.abs(signedAngleDifference(elongationAt(instant), target));
+      let previousUtc = startUtc;
+      let previousDistance = distanceAt(previousUtc);
+      let currentUtc = Math.min(startUtc + SOLAR_TERM_SAMPLE_MS, endUtc);
+      let currentDistance = distanceAt(currentUtc);
+      while (currentUtc < endUtc) {
+        const nextUtc = Math.min(currentUtc + SOLAR_TERM_SAMPLE_MS, endUtc);
+        const nextDistance = distanceAt(nextUtc);
+        if (currentDistance <= previousDistance && currentDistance <= nextDistance) {
+          let lowUtc = previousUtc;
+          let highUtc = nextUtc;
+          while (highUtc - lowUtc > PHASE_TOLERANCE_MS) {
+            const firstThird = Math.floor((2 * lowUtc + highUtc) / 3);
+            const secondThird = Math.floor((lowUtc + 2 * highUtc) / 3);
+            if (distanceAt(firstThird) <= distanceAt(secondThird)) highUtc = secondThird;
+            else lowUtc = firstThird;
+          }
+          const instantUtc = Math.round((lowUtc + highUtc) / 2);
+          phases.push(freeze({ name: phaseNames[target / 90], elongationDeg: elongationAt(instantUtc), targetElongationDeg: target, instantUtc }));
+        }
+        previousUtc = currentUtc;
+        previousDistance = currentDistance;
+        currentUtc = nextUtc;
+        currentDistance = nextDistance;
+      }
+    }
+    return freeze(phases.sort((first, second) => first.instantUtc - second.instantUtc));
+  }
+
+  function ratio(instantUtc, startUtc, endUtc) {
+    return Math.max(0, Math.min(1, (instantUtc - startUtc) / (endUtc - startUtc)));
+  }
+
+  function annualTimeline(year, requestedTimeZone, Astronomy, lunarApi) {
+    if (!Number.isInteger(year)) throw new TypeError('year must be an integer');
+    assertAstronomy(Astronomy);
+    const zone = resolveTimeZone(requestedTimeZone);
+    const startBoundary = zonedLocalMidnightToUtc({ year, month: 1, day: 1 }, zone.timeZone);
+    const endBoundary = zonedLocalMidnightToUtc({ year: year + 1, month: 1, day: 1 }, zone.timeZone);
+    if (startBoundary.instantUtc === null || endBoundary.instantUtc === null) throw new Error('unable to resolve local year boundary');
+    const startUtc = startBoundary.instantUtc;
+    const endUtc = endBoundary.instantUtc;
+    const gregorian = [];
+    for (let month = 1; month <= 12; month += 1) {
+      const monthStart = zonedLocalMidnightToUtc({ year, month, day: 1 }, zone.timeZone).instantUtc;
+      const monthEnd = month === 12 ? endUtc : zonedLocalMidnightToUtc({ year, month: month + 1, day: 1 }, zone.timeZone).instantUtc;
+      gregorian.push(freeze({ month, startUtc: monthStart, endUtc: monthEnd, startRatio: ratio(monthStart, startUtc, endUtc), endRatio: ratio(monthEnd, startUtc, endUtc) }));
+    }
+    const solarTerms = solarTermsForGregorianYear(year, Astronomy).map((term) => freeze({
+      name: term.name,
+      longitudeDeg: term.longitudeDeg,
+      instantUtc: term.instantUtc,
+      startRatio: ratio(term.instantUtc, startUtc, endUtc)
+    }));
+    const phases = principalMoonPhasesForInterval(startUtc - 40 * MILLISECONDS_PER_DAY, endUtc + 40 * MILLISECONDS_PER_DAY, Astronomy);
+    const newMoons = phases.filter((phase) => phase.targetElongationDeg === 0);
+    const fullMoons = phases.filter((phase) => phase.targetElongationDeg === 180);
+    const lunarMonths = [];
+    for (let index = 0; index < newMoons.length - 1; index += 1) {
+      const first = newMoons[index].instantUtc;
+      const second = newMoons[index + 1].instantUtc;
+      if (second <= startUtc || first >= endUtc) continue;
+      const labelDate = localDateParts(first + 12 * MILLISECONDS_PER_HOUR, zone.timeZone);
+      const lunar = lunarForLocalDate(labelDate, lunarApi);
+      const fullMoon = fullMoons.find((phase) => phase.instantUtc > first && phase.instantUtc < second);
+      const estimated = !fullMoon;
+      lunarMonths.push(freeze({
+        lunarYear: lunar.year,
+        month: lunar.month,
+        isLeapMonth: lunar.isLeapMonth,
+        label: lunar.supported ? `${lunar.isLeapMonth ? '闰' : ''}${lunar.monthName}月` : '农历日期超出支持范围',
+        startUtc: first,
+        endUtc: second,
+        startRatio: ratio(first, startUtc, endUtc),
+        endRatio: ratio(second, startUtc, endUtc),
+        fullMoonEstimateUtc: fullMoon ? fullMoon.instantUtc : Math.round((first + second) / 2),
+        fullMoonLabel: estimated ? '望附近' : '望',
+        estimated
+      }));
+    }
+    return freeze({ startUtc, endUtc, gregorian: freeze(gregorian), solarTerms: freeze(solarTerms), lunarMonths: freeze(lunarMonths) });
+  }
+
+  function calendarState(options) {
+    const instantUtc = options && options.instantUtc;
+    assertFiniteInstant(instantUtc);
+    const zone = resolveTimeZone(options && options.timeZone);
+    const displayTime = localDateParts(instantUtc, zone.timeZone);
+    const lunar = lunarForLocalDate(displayTime, options && options.lunarApi);
+    const terms = solarTermsForGregorianYear(displayTime.year, options && options.Astronomy);
+    const nextTerms = solarTermsForGregorianYear(displayTime.year + 1, options && options.Astronomy);
+    const previousTerms = solarTermsForGregorianYear(displayTime.year - 1, options && options.Astronomy);
+    const solarTermState = currentAndNextSolarTerm(instantUtc, previousTerms.concat(terms), nextTerms);
+    const liChun = terms.find((term) => term.name === '立春');
+    const springFestival = lunar.supported ? ganzhiForYear(lunar.year) : null;
+    const liChunGanzhi = ganzhiForYear(instantUtc < liChun.instantUtc ? displayTime.year - 1 : displayTime.year);
+    const differs = Boolean(springFestival && springFestival.name !== liChunGanzhi.name);
+    return freeze({
+      displayTime,
+      gregorian: freeze({ year: displayTime.year, month: displayTime.month, day: displayTime.day }),
+      lunar,
+      solarTerms: solarTermState,
+      ganzhi: freeze({
+        springFestival,
+        liChun: liChunGanzhi,
+        differs,
+        explanation: differs ? '春节与立春采用不同的年界，因此此时干支年名称不同。' : '春节与立春年界在此时给出相同的干支年名称。'
+      }),
+      support: freeze({ lunar: lunar.warning, timeZone: zone.warning })
+    });
+  }
+
   return freeze({
     resolveTimeZone,
     localDateParts,
@@ -253,6 +510,12 @@
     isLeapYear,
     daysInMonth,
     lunarForLocalDate,
-    ganzhiForYear
+    ganzhiForYear,
+    findSolarLongitudeCrossing,
+    solarTermsForGregorianYear,
+    currentAndNextSolarTerm,
+    principalMoonPhasesForInterval,
+    annualTimeline,
+    calendarState
   });
 });
