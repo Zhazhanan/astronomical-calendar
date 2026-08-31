@@ -152,6 +152,7 @@ Object.values(groups).forEach(g=>scene.add(g));
 /* constants */
 const R = 200;
 const obliquity = 23.43929111 * Math.PI/180;
+const MOON_DISPLAY_ORBIT_RADIUS = 24;
 
 function toVector3(point){
   return new THREE.Vector3(point.x, point.y, point.z);
@@ -360,8 +361,7 @@ function updateSunNow(worldState){
   groups.earthmoon.add(earthPivot);
 
   const moon = new THREE.Mesh(new THREE.SphereGeometry(2.2, 24,24), new THREE.MeshPhongMaterial({color:0xcfcfcf}));
-  moon.userData = {radius:24, speed:0.0006, parent:earth};
-  moon.position.set(earth.position.x + moon.userData.radius, earth.position.y, earth.position.z);
+  moon.position.set(MOON_DISPLAY_ORBIT_RADIUS, 0, 0);
   groups.earthmoon.add(moon);
   groups.earthmoon.userData = {earth, moon};
 })();
@@ -383,6 +383,7 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
 
 /* ----------------- HUD & animation ----------------- */
 let cachedWorldState;
+let currentWorldState;
 function worldStateFor(instantUtc){
   if(!cachedWorldState || cachedWorldState.instantUtc !== instantUtc){
     cachedWorldState = AstroEducation.WorldState.create({instantUtc});
@@ -391,10 +392,10 @@ function worldStateFor(instantUtc){
 }
 function updateHUD(){
   const currentDate = new Date();
-  const worldState = worldStateFor(currentDate.getTime());
+  currentWorldState = worldStateFor(currentDate.getTime());
   document.getElementById('localTime').textContent = '本地时间: ' + currentDate.toLocaleString();
   document.getElementById('utcTime').textContent = 'UTC: ' + currentDate.toISOString().replace('T',' ').substr(0,19) + 'Z';
-  updateSunNow(worldState);
+  updateSunNow(currentWorldState);
 }
 
 updateHUD();
@@ -458,23 +459,28 @@ function updateScreenLabels(){
   });
 }
 
+function updateEarthMoon(worldState, deltaMs){
+  if(!worldState) return;
+  const {earth, moon} = groups.earthmoon.userData;
+  const moonPositionKm = worldState.moon.positionKm;
+  const moonDistanceKm = Math.hypot(moonPositionKm.x, moonPositionKm.y, moonPositionKm.z);
+  // Distance is normalized only to keep the Moon visible; its WorldState direction is preserved.
+  moon.position.set(
+    moonPositionKm.x / moonDistanceKm * MOON_DISPLAY_ORBIT_RADIUS,
+    moonPositionKm.y / moonDistanceKm * MOON_DISPLAY_ORBIT_RADIUS,
+    moonPositionKm.z / moonDistanceKm * MOON_DISPLAY_ORBIT_RADIUS
+  );
+  earth.rotation.y += 0.0003 * deltaMs; // rendering-only spin, not astronomy state
+  moon.rotation.y += 0.0005 * deltaMs;
+}
+
 let lastTime = performance.now();
 function animate(){
   requestAnimationFrame(animate);
   const tNow = performance.now();
   const dt = (tNow - lastTime); lastTime = tNow;
 
-  // earth & moon simple animation
-  const moon = groups.earthmoon.children.find(ch=>ch.userData && ch.userData.radius);
-  const earth = groups.earthmoon.userData && groups.earthmoon.userData.earth;
-  if(earth) earth.rotation.y += 0.0003 * dt;
-  if(moon && moon.userData){
-    const s = moon.userData;
-    const t = performance.now() * s.speed;
-    const p = s.parent.position;
-    moon.position.set(p.x + Math.cos(t)*s.radius, p.y + Math.sin(t)*0.4, p.z + Math.sin(t)*s.radius);
-    moon.rotation.y += 0.0005 * dt;
-  }
+  updateEarthMoon(currentWorldState, dt);
 
   // toggle visibility per UI
   groups.ecliptic.visible = document.getElementById('showEcl').checked;

@@ -39,6 +39,10 @@ class OfflinePageControlsTest(unittest.TestCase):
         self.assertNotIn('id="solar-angle-core"', self.html)
         self.assertNotIn('function solarLongitudePrecise', self.html)
 
+    def test_uses_world_state_moon_position_without_wall_clock_orbit(self):
+        self.assertIn('worldState.moon.positionKm', self.html)
+        self.assertNotIn('performance.now() * s.speed', self.html)
+
 
 if __name__ == "__main__":
     unittest.main()
