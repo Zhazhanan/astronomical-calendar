@@ -131,6 +131,104 @@
     };
   }
 
+  function angularDistanceDegrees(firstDeg, secondDeg) {
+    const difference = Math.abs(normalizeDegrees(firstDeg - secondDeg));
+    return Math.min(difference, 360 - difference);
+  }
+
+  function illuminatedFraction(elongationDeg) {
+    return (1 - Math.cos(degreesToRadians(normalizeDegrees(elongationDeg)))) / 2;
+  }
+
+  function phaseName(elongationDeg) {
+    const elongation = normalizeDegrees(elongationDeg);
+    if (angularDistanceDegrees(elongation, 0) <= 8) return '朔';
+    if (angularDistanceDegrees(elongation, 90) <= 8) return '上弦附近';
+    if (angularDistanceDegrees(elongation, 180) <= 8) return '望';
+    if (angularDistanceDegrees(elongation, 270) <= 8) return '下弦附近';
+    if (elongation < 90) return '娥眉月';
+    if (elongation < 180) return '盈凸月';
+    if (elongation < 270) return '亏凸月';
+    return '残月';
+  }
+
+  function eclipseSeasonHint(elongationDeg, nodeDistanceDeg) {
+    const isSyzygy = angularDistanceDegrees(elongationDeg, 0) <= 12 ||
+      angularDistanceDegrees(elongationDeg, 180) <= 12;
+    const possible = isSyzygy && Math.abs(nodeDistanceDeg) <= 15;
+    return {
+      possible,
+      message: possible
+        ? '朔望时月球靠近交点，可能进入食季；这是教学提示，不能预测日食或月食。'
+        : '当前不满足食季提示条件。'
+    };
+  }
+
+  function moonGeocentricState(instantUtcMs, sunState) {
+    assertFiniteInstant(instantUtcMs);
+    const lunarSemiMajorAxisKm = 384400;
+    const lunarEccentricity = 0.0549;
+    const lunarInclinationDeg = 5.145;
+    const lunarSiderealDays = 27.321661;
+    const lunarNodalRegressionYears = 18.6;
+    const daysSinceEpoch = julianDay(instantUtcMs) - 2451543.5;
+    const ascendingNodeLongitudeDeg = normalizeDegrees(125.1228 - 0.0529538083 * daysSinceEpoch);
+    const argumentOfPerigeeDeg = normalizeDegrees(318.0634 + 0.1643573223 * daysSinceEpoch);
+    const meanAnomalyDeg = normalizeDegrees(115.3654 + 13.0649929509 * daysSinceEpoch);
+    const eccentricAnomalyRad = solveKepler(degreesToRadians(meanAnomalyDeg), lunarEccentricity);
+    const trueAnomalyRad = 2 * Math.atan2(
+      Math.sqrt(1 + lunarEccentricity) * Math.sin(eccentricAnomalyRad / 2),
+      Math.sqrt(1 - lunarEccentricity) * Math.cos(eccentricAnomalyRad / 2)
+    );
+    const distanceKm = lunarSemiMajorAxisKm * (1 - lunarEccentricity * Math.cos(eccentricAnomalyRad));
+    const nodeRad = degreesToRadians(ascendingNodeLongitudeDeg);
+    const inclinationRad = degreesToRadians(lunarInclinationDeg);
+    const argumentLatitudeRad = degreesToRadians(argumentOfPerigeeDeg) + trueAnomalyRad;
+    const vectorKm = {
+      x: distanceKm * (Math.cos(nodeRad) * Math.cos(argumentLatitudeRad) -
+        Math.sin(nodeRad) * Math.sin(argumentLatitudeRad) * Math.cos(inclinationRad)),
+      y: distanceKm * Math.sin(argumentLatitudeRad) * Math.sin(inclinationRad),
+      z: distanceKm * (Math.sin(nodeRad) * Math.cos(argumentLatitudeRad) +
+        Math.cos(nodeRad) * Math.sin(argumentLatitudeRad) * Math.cos(inclinationRad))
+    };
+    const longitudeDeg = normalizeDegrees(radiansToDegrees(Math.atan2(vectorKm.z, vectorKm.x)));
+    const latitudeDeg = radiansToDegrees(Math.asin(vectorKm.y / distanceKm));
+    const solarState = sunState || solarGeocentricState(instantUtcMs);
+    const elongationDeg = normalizeDegrees(longitudeDeg - solarState.longitudeDeg);
+    const descendingNodeLongitudeDeg = normalizeDegrees(ascendingNodeLongitudeDeg + 180);
+    const ascendingNodeDistanceDeg = angularDistanceDegrees(longitudeDeg, ascendingNodeLongitudeDeg);
+    const descendingNodeDistanceDeg = angularDistanceDegrees(longitudeDeg, descendingNodeLongitudeDeg);
+    const isAscendingNodeNearest = ascendingNodeDistanceDeg <= descendingNodeDistanceDeg;
+    const nodeDistanceDeg = Math.min(ascendingNodeDistanceDeg, descendingNodeDistanceDeg);
+    const perigeeDistanceKm = lunarSemiMajorAxisKm * (1 - lunarEccentricity);
+    const apogeeDistanceKm = lunarSemiMajorAxisKm * (1 + lunarEccentricity);
+
+    return {
+      vectorKm,
+      longitudeDeg,
+      latitudeDeg,
+      distanceKm,
+      elongationDeg,
+      illumination: illuminatedFraction(elongationDeg),
+      waxing: elongationDeg > 0 && elongationDeg < 180,
+      phaseName: phaseName(elongationDeg),
+      ascendingNodeLongitudeDeg,
+      descendingNodeLongitudeDeg,
+      ascendingNodeLabel: '升交点',
+      descendingNodeLabel: '降交点',
+      nearestNodeLabel: isAscendingNodeNearest ? '升交点' : '降交点',
+      nodeDistanceDeg,
+      perigeeDistanceKm,
+      apogeeDistanceKm,
+      orbit: {
+        inclinationDeg: lunarInclinationDeg,
+        eccentricity: lunarEccentricity,
+        siderealDays: lunarSiderealDays,
+        nodalRegressionYears: lunarNodalRegressionYears
+      }
+    };
+  }
+
   function solarTermAtLongitude(longitudeDeg) {
     const index = Math.round(normalizeDegrees(longitudeDeg) / 15) % 24;
     return { index, name: SOLAR_TERMS[index], longitudeDeg: index * 15 };
@@ -180,6 +278,10 @@
     solveKepler,
     earthHeliocentricState,
     solarGeocentricState,
+    illuminatedFraction,
+    phaseName,
+    eclipseSeasonHint,
+    moonGeocentricState,
     eclipticToEquatorial,
     solarTermAtLongitude,
     solarTermSectorAtLongitude,

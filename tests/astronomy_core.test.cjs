@@ -38,3 +38,28 @@ test('Earth axial direction stays inertially fixed over an orbit', () => {
   assert.deepEqual(first.axisUnit, second.axisUnit);
   assert.ok(Math.abs(first.obliquityDeg - 23.44) < 0.1);
 });
+
+test('Moon orbit uses the real mean inclination', () => {
+  const moon = Astronomy.moonGeocentricState(Date.UTC(2026, 0, 1));
+  assert.ok(Math.abs(moon.orbit.inclinationDeg - 5.145) < 0.001);
+  assert.equal(moon.orbit.nodalRegressionYears, 18.6);
+});
+
+test('Moon phase illumination follows Sun-Moon elongation', () => {
+  assert.ok(Math.abs(Astronomy.illuminatedFraction(0)) < 1e-12);
+  assert.ok(Math.abs(Astronomy.illuminatedFraction(90) - 0.5) < 1e-12);
+  assert.ok(Math.abs(Astronomy.illuminatedFraction(180) - 1) < 1e-12);
+});
+
+test('phase names cover the four principal phases', () => {
+  assert.equal(Astronomy.phaseName(2), '朔');
+  assert.equal(Astronomy.phaseName(90), '上弦附近');
+  assert.equal(Astronomy.phaseName(178), '望');
+  assert.equal(Astronomy.phaseName(270), '下弦附近');
+});
+
+test('eclipse-season hint requires both syzygy and a nearby node', () => {
+  assert.equal(Astronomy.eclipseSeasonHint(3, 2).possible, true);
+  assert.equal(Astronomy.eclipseSeasonHint(90, 2).possible, false);
+  assert.equal(Astronomy.eclipseSeasonHint(3, 18).possible, false);
+});
