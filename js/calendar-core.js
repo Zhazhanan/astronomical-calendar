@@ -379,7 +379,8 @@
       const moon = Astronomy.moonGeocentricState(instant, sun);
       return {
         longitudeDifferenceDeg: ((moon.longitudeDeg - sun.longitudeDeg) % 360 + 360) % 360,
-        elongationDeg: moon.elongationDeg
+        orientedElongationDeg: moon.elongationDeg,
+        spatialSeparationDeg: Math.min(moon.elongationDeg, 360 - moon.elongationDeg)
       };
     };
     for (const target of [0, 90, 180, 270]) {
@@ -396,8 +397,9 @@
           name: phaseNames[target / 90],
           targetElongationDeg: target,
           longitudeDifferenceDeg: phaseState.longitudeDifferenceDeg,
-          elongationDeg: phaseState.elongationDeg,
-          spatialSeparationDeg: phaseState.elongationDeg,
+          elongationDeg: phaseState.orientedElongationDeg,
+          orientedElongationDeg: phaseState.orientedElongationDeg,
+          spatialSeparationDeg: phaseState.spatialSeparationDeg,
           instantUtc
         }));
         cursor = instantUtc + PHASE_TOLERANCE_MS;
@@ -463,10 +465,12 @@
         newMoonTargetElongationDeg: newMoon.targetElongationDeg,
         newMoonLongitudeDifferenceDeg: newMoon.longitudeDifferenceDeg,
         newMoonElongationDeg: newMoon.elongationDeg,
+        newMoonOrientedElongationDeg: newMoon.orientedElongationDeg,
         newMoonSpatialSeparationDeg: newMoon.spatialSeparationDeg,
         fullMoonTargetElongationDeg: fullMoon ? fullMoon.targetElongationDeg : null,
         fullMoonLongitudeDifferenceDeg: fullMoon ? fullMoon.longitudeDifferenceDeg : null,
         fullMoonElongationDeg: fullMoon ? fullMoon.elongationDeg : null,
+        fullMoonOrientedElongationDeg: fullMoon ? fullMoon.orientedElongationDeg : null,
         fullMoonSpatialSeparationDeg: fullMoon ? fullMoon.spatialSeparationDeg : null,
         estimated
       }));

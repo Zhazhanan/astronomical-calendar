@@ -176,7 +176,12 @@ test('principal lunar phases are exact directed ecliptic-longitude events with s
     assert.ok(angularDistance(longitudeDifferenceDeg, phase.targetElongationDeg) < 0.02);
     assert.ok(angularDistance(longitudeDifferenceDeg, phase.longitudeDifferenceDeg) < 0.02);
     assert.ok(angularDistance(moon.elongationDeg, phase.elongationDeg) < 0.01);
-    assert.equal(phase.spatialSeparationDeg, phase.elongationDeg);
+    assert.equal(phase.orientedElongationDeg, phase.elongationDeg);
+    assert.ok(phase.spatialSeparationDeg >= 0 && phase.spatialSeparationDeg <= 180);
+    assert.equal(
+      phase.spatialSeparationDeg,
+      Math.min(phase.elongationDeg, 360 - phase.elongationDeg)
+    );
   }
   const names = phases.map((phase) => phase.name);
   for (let index = 1; index < names.length; index += 1) {
@@ -186,8 +191,12 @@ test('principal lunar phases are exact directed ecliptic-longitude events with s
   }
   const newMoon = phases.find((phase) => phase.name === '朔');
   const fullMoon = phases.find((phase) => phase.name === '望');
+  const lowerQuarter = phases.find((phase) => phase.name === '下弦');
   assert.notEqual(newMoon.elongationDeg, 0, 'inclined orbit must not claim exact zero spatial separation');
   assert.notEqual(fullMoon.elongationDeg, 180, 'inclined orbit must not claim exact 180° spatial separation');
+  assert.ok(lowerQuarter.elongationDeg > 180, '下弦保留有方向相角');
+  assert.ok(lowerQuarter.spatialSeparationDeg < 180, '下弦空间夹角必须为无方向锐角');
+  assert.notEqual(lowerQuarter.spatialSeparationDeg, lowerQuarter.elongationDeg);
 });
 
 test('solar term cache returns frozen independent values', () => {
@@ -224,8 +233,16 @@ test('annual lunar rows use one non-duplicated leap prefix and exact phase bound
     assert.equal(month.estimated, false);
     assert.equal(month.newMoonTargetElongationDeg, 0);
     assert.equal(month.fullMoonTargetElongationDeg, 180);
-    assert.equal(month.newMoonSpatialSeparationDeg, month.newMoonElongationDeg);
-    assert.equal(month.fullMoonSpatialSeparationDeg, month.fullMoonElongationDeg);
+    assert.equal(month.newMoonOrientedElongationDeg, month.newMoonElongationDeg);
+    assert.equal(month.fullMoonOrientedElongationDeg, month.fullMoonElongationDeg);
+    assert.equal(
+      month.newMoonSpatialSeparationDeg,
+      Math.min(month.newMoonElongationDeg, 360 - month.newMoonElongationDeg)
+    );
+    assert.equal(
+      month.fullMoonSpatialSeparationDeg,
+      Math.min(month.fullMoonElongationDeg, 360 - month.fullMoonElongationDeg)
+    );
     const boundarySun = Astronomy.solarGeocentricState(month.startUtc);
     const boundaryMoon = Astronomy.moonGeocentricState(month.startUtc, boundarySun);
     assert.ok(angularDistance(
