@@ -85,12 +85,63 @@ test('notification uses a listener snapshot and unsubscribe is idempotent', () =
   unsubscribeFirst();
 });
 
-test('a throwing listener does not prevent the remaining snapshot listeners', () => {
+test('reentrant mutations are delivered in FIFO state order without recursive notification', () => {
   const clock = TimeController.create({ instantUtc: 0 });
+  const firstListenerStates = [];
+  const secondListenerStates = [];
+  let changed = false;
+  clock.subscribe((state) => {
+    firstListenerStates.push([state.playing, state.instantUtc]);
+    if (!changed) {
+      changed = true;
+      clock.setInstant(42);
+    }
+  });
+  clock.subscribe((state) => secondListenerStates.push([state.playing, state.instantUtc]));
+
+  clock.play();
+  assert.deepEqual(firstListenerStates, [[true, 0], [true, 42]]);
+  assert.deepEqual(secondListenerStates, [[true, 0], [true, 42]]);
+  assert.equal(clock.getState().instantUtc, 42);
+});
+
+test('listener errors are reported without making a committed mutator fail', () => {
+  const reported = [];
+  const clock = TimeController.create({
+    instantUtc: 0,
+    onListenerError(error, committedState) {
+      reported.push([error.message, committedState]);
+    }
+  });
   const calls = [];
   clock.subscribe(() => { throw new Error('listener failed'); });
-  clock.subscribe(() => calls.push('after-error'));
-  assert.throws(() => clock.play(), /listener failed/);
-  assert.deepEqual(calls, ['after-error']);
+  clock.subscribe((state) => calls.push(state.playing));
+
+  assert.doesNotThrow(() => clock.play());
+  assert.deepEqual(calls, [true]);
+  assert.equal(reported.length, 1);
+  assert.equal(reported[0][0], 'listener failed');
+  assert.equal(reported[0][1].playing, true);
+  assert.equal(clock.getState().playing, true);
+});
+
+test('errors thrown by the error reporter cannot break later queued notifications', () => {
+  const clock = TimeController.create({
+    instantUtc: 0,
+    onListenerError() { throw new Error('reporting failed'); }
+  });
+  const states = [];
+  let changed = false;
+  clock.subscribe((state) => {
+    if (!changed) {
+      changed = true;
+      clock.setInstant(42);
+    }
+    throw new Error('listener failed');
+  });
+  clock.subscribe((state) => states.push(state.instantUtc));
+
+  assert.doesNotThrow(() => clock.play());
+  assert.deepEqual(states, [0, 42]);
   assert.equal(clock.getState().playing, true);
 });

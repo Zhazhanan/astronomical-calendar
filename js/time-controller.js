@@ -71,31 +71,51 @@
     const location = Object.prototype.hasOwnProperty.call(initial, 'location')
       ? initial.location
       : DEFAULT_LOCATION;
+    const onListenerError = initial.onListenerError == null ? null : initial.onListenerError;
     assertFinite(instantUtc, 'instantUtc');
     assertTimeZone(timeZone);
     assertSpeed(daysPerSecond);
+    if (onListenerError !== null && typeof onListenerError !== 'function') {
+      throw new TypeError('onListenerError must be a function when provided');
+    }
 
     let state = freezeState({ instantUtc, timeZone, location, playing: false, daysPerSecond });
     const listeners = new Set();
+    const notificationQueue = [];
+    let isNotifying = false;
 
-    function notify() {
-      const snapshot = Array.from(listeners);
-      let firstError = null;
-      for (const listener of snapshot) {
-        try {
-          listener(state);
-        } catch (error) {
-          if (!firstError) firstError = error;
+    function reportListenerError(error, committedState) {
+      if (!onListenerError) return;
+      try {
+        onListenerError(error, committedState);
+      } catch (ignoredError) {
+        // Error reporting must not interrupt the committed-state notification queue.
+      }
+    }
+
+    function notifyQueuedStates() {
+      if (isNotifying) return;
+      isNotifying = true;
+      while (notificationQueue.length > 0) {
+        const committedState = notificationQueue.shift();
+        const snapshot = Array.from(listeners);
+        for (const listener of snapshot) {
+          try {
+            listener(committedState);
+          } catch (error) {
+            reportListenerError(error, committedState);
+          }
         }
       }
-      if (firstError) throw firstError;
+      isNotifying = false;
     }
 
     function replace(changes) {
       const nextState = Object.assign({}, state, changes);
       assertFinite(nextState.instantUtc, 'instantUtc');
       state = freezeState(nextState);
-      notify();
+      notificationQueue.push(state);
+      notifyQueuedStates();
       return state;
     }
 
