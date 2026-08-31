@@ -44,6 +44,7 @@ test('lunar conversion handles Spring Festival and a leap month', () => {
   );
   const leap = Calendar.lunarForLocalDate({ year: 2025, month: 7, day: 25 }, lunarApi);
   assert.equal(leap.isLeapMonth, true);
+  assert.equal(leap.monthName, '闰六');
   assert.ok(Object.isFrozen(leap));
 });
 
@@ -159,18 +160,34 @@ test('annual timeline uses one normalized UTC scale for all rows', () => {
   }
 });
 
-test('principal lunar phases are solved from Sun-Moon elongation', () => {
+test('principal lunar phases are exact directed ecliptic-longitude events with separate spatial separation', () => {
   const phases = Calendar.principalMoonPhasesForInterval(
     Date.UTC(2026, 0, 1),
-    Date.UTC(2026, 2, 1),
+    Date.UTC(2026, 3, 1),
     Astronomy
   );
-  assert.ok(phases.length >= 7 && phases.length <= 9);
+  assert.ok(phases.length >= 11 && phases.length <= 13);
+  const expectedNameForTarget = { 0: '朔', 90: '上弦', 180: '望', 270: '下弦' };
   for (const phase of phases) {
     const sun = Astronomy.solarGeocentricState(phase.instantUtc);
     const moon = Astronomy.moonGeocentricState(phase.instantUtc, sun);
+    const longitudeDifferenceDeg = Astronomy.normalizeDegrees(moon.longitudeDeg - sun.longitudeDeg);
+    assert.equal(phase.name, expectedNameForTarget[phase.targetElongationDeg]);
+    assert.ok(angularDistance(longitudeDifferenceDeg, phase.targetElongationDeg) < 0.02);
+    assert.ok(angularDistance(longitudeDifferenceDeg, phase.longitudeDifferenceDeg) < 0.02);
     assert.ok(angularDistance(moon.elongationDeg, phase.elongationDeg) < 0.01);
+    assert.equal(phase.spatialSeparationDeg, phase.elongationDeg);
   }
+  const names = phases.map((phase) => phase.name);
+  for (let index = 1; index < names.length; index += 1) {
+    const previous = ['朔', '上弦', '望', '下弦'].indexOf(names[index - 1]);
+    const current = ['朔', '上弦', '望', '下弦'].indexOf(names[index]);
+    assert.equal(current, (previous + 1) % 4);
+  }
+  const newMoon = phases.find((phase) => phase.name === '朔');
+  const fullMoon = phases.find((phase) => phase.name === '望');
+  assert.notEqual(newMoon.elongationDeg, 0, 'inclined orbit must not claim exact zero spatial separation');
+  assert.notEqual(fullMoon.elongationDeg, 180, 'inclined orbit must not claim exact 180° spatial separation');
 });
 
 test('solar term cache returns frozen independent values', () => {
@@ -180,6 +197,56 @@ test('solar term cache returns frozen independent values', () => {
   assert.notEqual(first[0], second[0]);
   assert.ok(Object.isFrozen(first));
   assert.ok(Object.isFrozen(first[0]));
+});
+
+test('solar-term cache is isolated by Astronomy implementation identity', () => {
+  const shiftedAstronomy = {
+    ...Astronomy,
+    solarGeocentricState(instantUtc) {
+      const state = Astronomy.solarGeocentricState(instantUtc);
+      return { ...state, longitudeDeg: Astronomy.normalizeDegrees(state.longitudeDeg + 1) };
+    }
+  };
+  const standard = Calendar.solarTermsForGregorianYear(2026, Astronomy);
+  const shifted = Calendar.solarTermsForGregorianYear(2026, shiftedAstronomy);
+  assert.notEqual(standard[0].instantUtc, shifted[0].instantUtc);
+  assert.ok(shifted.every((term) =>
+    angularDistance(shiftedAstronomy.solarGeocentricState(term.instantUtc).longitudeDeg, term.longitudeDeg) < 0.001
+  ));
+});
+
+test('annual lunar rows use one non-duplicated leap prefix and exact phase boundaries', () => {
+  const timeline = Calendar.annualTimeline(2025, 'Asia/Shanghai', Astronomy, lunarApi);
+  const leapSix = timeline.lunarMonths.find((month) => month.isLeapMonth && month.month === 6);
+  assert.equal(leapSix.label, '闰六月');
+  for (const month of timeline.lunarMonths) {
+    assert.equal(month.label.includes('闰闰'), false);
+    assert.equal(month.estimated, false);
+    assert.equal(month.newMoonTargetElongationDeg, 0);
+    assert.equal(month.fullMoonTargetElongationDeg, 180);
+    assert.equal(month.newMoonSpatialSeparationDeg, month.newMoonElongationDeg);
+    assert.equal(month.fullMoonSpatialSeparationDeg, month.fullMoonElongationDeg);
+    const boundarySun = Astronomy.solarGeocentricState(month.startUtc);
+    const boundaryMoon = Astronomy.moonGeocentricState(month.startUtc, boundarySun);
+    assert.ok(angularDistance(
+      Astronomy.normalizeDegrees(boundaryMoon.longitudeDeg - boundarySun.longitudeDeg), 0
+    ) < 0.02);
+    assert.ok(angularDistance(month.newMoonLongitudeDifferenceDeg, 0) < 0.02);
+    assert.ok(angularDistance(month.fullMoonLongitudeDifferenceDeg, 180) < 0.02);
+    assert.notEqual(month.newMoonElongationDeg, 0);
+    assert.notEqual(month.fullMoonElongationDeg, 180);
+  }
+});
+
+test('annual timelines retain overlapping lunar rows at both supported-year boundaries', () => {
+  for (const year of [1900, 2100]) {
+    const timeline = Calendar.annualTimeline(year, 'Asia/Shanghai', Astronomy, lunarApi);
+    assert.ok(timeline.lunarMonths.length >= 12);
+    assert.ok(timeline.lunarMonths[0].startUtc < timeline.startUtc);
+    assert.ok(timeline.lunarMonths.at(-1).endUtc > timeline.endUtc);
+    assert.ok(timeline.lunarMonths.every((month) => month.label !== '农历日期超出支持范围'));
+    assert.ok(timeline.lunarMonths.every((month) => month.estimated === false));
+  }
 });
 
 test('solar crossing reports an explicit bracket failure when the interval has none', () => {

@@ -20,7 +20,7 @@
   const PHASE_TOLERANCE_MS = 60 * 1000;
   const MILLISECONDS_PER_DAY = 24 * MILLISECONDS_PER_HOUR;
   const formatterCache = new Map();
-  const solarTermsCache = new Map();
+  const solarTermsCache = new WeakMap();
 
   function freeze(value) {
     if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -316,7 +316,12 @@
   function solarTermsForGregorianYear(year, Astronomy) {
     if (!Number.isInteger(year)) throw new TypeError('year must be an integer');
     assertAstronomy(Astronomy);
-    const cached = solarTermsCache.get(year);
+    let yearCache = solarTermsCache.get(Astronomy);
+    if (!yearCache) {
+      yearCache = new Map();
+      solarTermsCache.set(Astronomy, yearCache);
+    }
+    const cached = yearCache.get(year);
     if (cached) return cloneFrozen(cached);
     const searchStart = Date.UTC(year, 0, 1) - 5 * MILLISECONDS_PER_DAY;
     const searchEnd = Date.UTC(year + 1, 0, 1) + 5 * MILLISECONDS_PER_DAY;
@@ -337,7 +342,7 @@
       throw new Error(`expected 24 unique solar terms for Gregorian year ${year}`);
     }
     const immutable = freeze(terms);
-    solarTermsCache.set(year, immutable);
+    yearCache.set(year, immutable);
     return cloneFrozen(immutable);
   }
 
@@ -369,51 +374,33 @@
     if (startUtc >= endUtc) throw new RangeError('phase interval endUtc must be after startUtc');
     const phaseNames = ['朔', '上弦', '望', '下弦'];
     const phases = [];
-    const elongationAt = (instant) => {
+    const phaseStateAt = (instant) => {
       const sun = Astronomy.solarGeocentricState(instant);
-      return Astronomy.moonGeocentricState(instant, sun).elongationDeg;
+      const moon = Astronomy.moonGeocentricState(instant, sun);
+      return {
+        longitudeDifferenceDeg: ((moon.longitudeDeg - sun.longitudeDeg) % 360 + 360) % 360,
+        elongationDeg: moon.elongationDeg
+      };
     };
-    // The inclined 3D orbit means conjunction and opposition do not normally
-    // reach an exact 0°/180° separation.  For those two named phases, solve
-    // the closest model approach; quadratures remain ordinary crossings.
-    for (const target of [90, 270]) {
+    for (const target of [0, 90, 180, 270]) {
       let cursor = startUtc;
       while (cursor < endUtc) {
         const instantUtc = findForwardCrossing({
           startUtc: cursor,
           endUtc,
           targetLongitudeDeg: target
-        }, elongationAt, PHASE_TOLERANCE_MS);
+        }, (instant) => phaseStateAt(instant).longitudeDifferenceDeg, PHASE_TOLERANCE_MS);
         if (instantUtc === null) break;
-        phases.push(freeze({ name: phaseNames[target / 90], elongationDeg: elongationAt(instantUtc), targetElongationDeg: target, instantUtc }));
+        const phaseState = phaseStateAt(instantUtc);
+        phases.push(freeze({
+          name: phaseNames[target / 90],
+          targetElongationDeg: target,
+          longitudeDifferenceDeg: phaseState.longitudeDifferenceDeg,
+          elongationDeg: phaseState.elongationDeg,
+          spatialSeparationDeg: phaseState.elongationDeg,
+          instantUtc
+        }));
         cursor = instantUtc + PHASE_TOLERANCE_MS;
-      }
-    }
-    for (const target of [0, 180]) {
-      const distanceAt = (instant) => Math.abs(signedAngleDifference(elongationAt(instant), target));
-      let previousUtc = startUtc;
-      let previousDistance = distanceAt(previousUtc);
-      let currentUtc = Math.min(startUtc + SOLAR_TERM_SAMPLE_MS, endUtc);
-      let currentDistance = distanceAt(currentUtc);
-      while (currentUtc < endUtc) {
-        const nextUtc = Math.min(currentUtc + SOLAR_TERM_SAMPLE_MS, endUtc);
-        const nextDistance = distanceAt(nextUtc);
-        if (currentDistance <= previousDistance && currentDistance <= nextDistance) {
-          let lowUtc = previousUtc;
-          let highUtc = nextUtc;
-          while (highUtc - lowUtc > PHASE_TOLERANCE_MS) {
-            const firstThird = Math.floor((2 * lowUtc + highUtc) / 3);
-            const secondThird = Math.floor((lowUtc + 2 * highUtc) / 3);
-            if (distanceAt(firstThird) <= distanceAt(secondThird)) highUtc = secondThird;
-            else lowUtc = firstThird;
-          }
-          const instantUtc = Math.round((lowUtc + highUtc) / 2);
-          phases.push(freeze({ name: phaseNames[target / 90], elongationDeg: elongationAt(instantUtc), targetElongationDeg: target, instantUtc }));
-        }
-        previousUtc = currentUtc;
-        previousDistance = currentDistance;
-        currentUtc = nextUtc;
-        currentDistance = nextDistance;
       }
     }
     return freeze(phases.sort((first, second) => first.instantUtc - second.instantUtc));
@@ -449,10 +436,14 @@
     const fullMoons = phases.filter((phase) => phase.targetElongationDeg === 180);
     const lunarMonths = [];
     for (let index = 0; index < newMoons.length - 1; index += 1) {
-      const first = newMoons[index].instantUtc;
+      const newMoon = newMoons[index];
+      const first = newMoon.instantUtc;
       const second = newMoons[index + 1].instantUtc;
       if (second <= startUtc || first >= endUtc) continue;
-      const labelDate = localDateParts(first + 12 * MILLISECONDS_PER_HOUR, zone.timeZone);
+      const labelDate = localDateParts(
+        Math.max(first, startUtc) + 12 * MILLISECONDS_PER_HOUR,
+        zone.timeZone
+      );
       const lunar = lunarForLocalDate(labelDate, lunarApi);
       const fullMoon = fullMoons.find((phase) => phase.instantUtc > first && phase.instantUtc < second);
       const estimated = !fullMoon;
@@ -460,13 +451,23 @@
         lunarYear: lunar.year,
         month: lunar.month,
         isLeapMonth: lunar.isLeapMonth,
-        label: lunar.supported ? `${lunar.isLeapMonth ? '闰' : ''}${lunar.monthName}月` : '农历日期超出支持范围',
+        label: lunar.supported
+          ? `${lunar.isLeapMonth && !lunar.monthName.startsWith('闰') ? '闰' : ''}${lunar.monthName}月`
+          : '农历日期超出支持范围',
         startUtc: first,
         endUtc: second,
         startRatio: ratio(first, startUtc, endUtc),
         endRatio: ratio(second, startUtc, endUtc),
         fullMoonEstimateUtc: fullMoon ? fullMoon.instantUtc : Math.round((first + second) / 2),
         fullMoonLabel: estimated ? '望附近' : '望',
+        newMoonTargetElongationDeg: newMoon.targetElongationDeg,
+        newMoonLongitudeDifferenceDeg: newMoon.longitudeDifferenceDeg,
+        newMoonElongationDeg: newMoon.elongationDeg,
+        newMoonSpatialSeparationDeg: newMoon.spatialSeparationDeg,
+        fullMoonTargetElongationDeg: fullMoon ? fullMoon.targetElongationDeg : null,
+        fullMoonLongitudeDifferenceDeg: fullMoon ? fullMoon.longitudeDifferenceDeg : null,
+        fullMoonElongationDeg: fullMoon ? fullMoon.elongationDeg : null,
+        fullMoonSpatialSeparationDeg: fullMoon ? fullMoon.spatialSeparationDeg : null,
         estimated
       }));
     }
