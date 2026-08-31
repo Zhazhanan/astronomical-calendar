@@ -1,6 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
 const Astronomy = require('../js/astronomy-core.js');
+const Calendar = require('../js/calendar-core.js');
+const Observer = require('../js/observer-core.js');
+const lunarApi = require('../vendor/lunar/lunar.js');
 const WorldState = require('../js/world-state.js');
 
 test('one instant produces synchronized Sun, Earth, and Moon state', () => {
@@ -39,4 +45,113 @@ test('WorldState.create rejects every invalid public instant with its stable Typ
     (error) => error instanceof TypeError &&
       error.message === 'instantUtc must be a finite UTC millisecond value'
   );
+});
+
+test('full world state contains one synchronized calendar and observer result', () => {
+  const instantUtc = Date.UTC(2026, 1, 17, 4);
+  const state = WorldState.create({
+    instantUtc,
+    timeZone: 'Asia/Shanghai',
+    location: { name: '北京', latitudeDeg: 39.9042, longitudeDeg: 116.4074 },
+    dependencies: { Astronomy, Calendar, Observer, lunarApi }
+  });
+  assert.equal(state.displayTime.timeZone, 'Asia/Shanghai');
+  assert.equal(state.lunar.day, 1);
+  assert.equal(state.ganzhi.springFestival.name, '丙午');
+  assert.ok(Number.isFinite(state.observer.altitudeDeg));
+  assert.equal(Object.isFrozen(state.ganzhi), true);
+  assert.equal(state.location.name, '北京');
+  assert.equal(state.timeZone, 'Asia/Shanghai');
+});
+
+test('timezone changes local calendar fields while location remains independent', () => {
+  const instantUtc = Date.UTC(2026, 0, 1, 0, 30);
+  const beijing = { name: '北京', latitudeDeg: 39.9042, longitudeDeg: 116.4074 };
+  const shanghaiTime = WorldState.create({ instantUtc, timeZone: 'Asia/Shanghai', location: beijing });
+  const losAngelesTime = WorldState.create({ instantUtc, timeZone: 'America/Los_Angeles', location: beijing });
+  const newYork = WorldState.create({
+    instantUtc,
+    timeZone: 'Asia/Shanghai',
+    location: { name: '纽约', latitudeDeg: 40.7128, longitudeDeg: -74.006 }
+  });
+  assert.equal(shanghaiTime.instantUtc, losAngelesTime.instantUtc);
+  assert.notEqual(shanghaiTime.displayTime.isoDate, losAngelesTime.displayTime.isoDate);
+  assert.deepEqual(shanghaiTime.location, losAngelesTime.location);
+  assert.equal(newYork.timeZone, shanghaiTime.timeZone);
+  assert.notEqual(newYork.location.longitudeDeg, shanghaiTime.location.longitudeDeg);
+});
+
+test('invalid timezone and location are reported as structured support warnings', () => {
+  const state = WorldState.create({
+    instantUtc: Date.UTC(2026, 0, 1),
+    timeZone: 'Mars/Olympus',
+    location: { name: '无效地点', latitudeDeg: 91, longitudeDeg: 0 }
+  });
+  assert.equal(state.timeZone, 'Asia/Shanghai');
+  assert.equal(state.location.name, '北京');
+  assert.equal(state.support.timeZone.code, 'INVALID_TIME_ZONE');
+  assert.equal(state.support.location.code, 'INVALID_LOCATION');
+  assert.equal(Object.isFrozen(state.support), true);
+});
+
+test('annual timeline caches by dependency identity and returns isolated frozen clones', () => {
+  let calls = 0;
+  const fakeAstronomy = {
+    earthHeliocentricState() {}, solarGeocentricState() {}, moonGeocentricState() {}
+  };
+  const fakeLunarApi = { Solar: { fromYmd() {} } };
+  const fakeCalendar = {
+    resolveTimeZone(timeZone) { return { timeZone: timeZone || 'Asia/Shanghai', warning: null }; },
+    calendarState() {},
+    annualTimeline(year, timeZone) {
+      calls += 1;
+      return { year, timeZone, gregorian: [{ month: 1 }] };
+    }
+  };
+  const fakeObserver = { observerState() {} };
+  const dependencies = { Astronomy: fakeAstronomy, Calendar: fakeCalendar, Observer: fakeObserver, lunarApi: fakeLunarApi };
+  const first = WorldState.annualTimeline(2026, 'Asia/Shanghai', dependencies);
+  const second = WorldState.annualTimeline(2026, 'Asia/Shanghai', dependencies);
+  const alternateLunar = { Solar: { fromYmd() {} } };
+  WorldState.annualTimeline(2026, 'Asia/Shanghai', Object.assign({}, dependencies, { lunarApi: alternateLunar }));
+  assert.equal(calls, 2);
+  assert.notEqual(first, second);
+  assert.notEqual(first.gregorian, second.gregorian);
+  assert.ok(Object.isFrozen(first));
+  assert.ok(Object.isFrozen(first.gregorian));
+  first.gregorian[0].month = 2;
+  assert.equal(first.gregorian[0].month, 1);
+  assert.equal(second.gregorian[0].month, 1);
+});
+
+test('browser-style UMD dependencies compose the same state without CommonJS', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../js/world-state.js'), 'utf8');
+  const context = {
+    AstroEducation: { Astronomy, Calendar, Observer },
+    Solar: lunarApi.Solar,
+    LunarYear: lunarApi.LunarYear
+  };
+  context.globalThis = context;
+  vm.runInNewContext(source, context);
+  const state = context.AstroEducation.WorldState.create({ instantUtc: Date.UTC(2026, 1, 17, 4) });
+  assert.equal(state.lunar.day, 1);
+  assert.equal(state.location.name, '北京');
+});
+
+test('offline page loads world-state dependencies in the required order', () => {
+  const page = fs.readFileSync(path.join(__dirname, '../tiangan_dizhi_offline.html'), 'utf8');
+  const scripts = [
+    'vendor/lunar/lunar.js',
+    'js/astronomy-core.js',
+    'js/calendar-core.js',
+    'js/observer-core.js',
+    'js/world-state.js',
+    'js/time-controller.js'
+  ];
+  let previous = -1;
+  for (const script of scripts) {
+    const position = page.indexOf(`src="${script}"`);
+    assert.ok(position > previous, `${script} must follow its dependency`);
+    previous = position;
+  }
 });
