@@ -36,6 +36,25 @@
       latitudeDeg >= -90 && latitudeDeg <= 90 && longitudeDeg >= -180 && longitudeDeg <= 180;
   }
 
+  function isPlainNonEmptyObject(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const prototype = Object.getPrototypeOf(value);
+    return (prototype === Object.prototype || prototype === null) && Object.keys(value).length > 0;
+  }
+
+  function rejectedInputSnapshot(value) {
+    if (value === null || value === undefined || typeof value !== 'object') return value;
+    if (Array.isArray(value)) return value.map((item) => rejectedInputSnapshot(item));
+    if (isPlainNonEmptyObject(value)) {
+      const snapshot = {};
+      Object.keys(value).forEach((key) => {
+        snapshot[key] = rejectedInputSnapshot(value[key]);
+      });
+      return snapshot;
+    }
+    return String(value);
+  }
+
   function degreesToRadians(degrees) {
     return degrees * Math.PI / 180;
   }
@@ -64,9 +83,9 @@
   }
 
   function resolveLocation(input) {
-    const latitudeDeg = input && input.latitudeDeg;
-    const longitudeDeg = input && input.longitudeDeg;
-    if (isValidCoordinate(latitudeDeg, longitudeDeg)) {
+    if (isPlainNonEmptyObject(input) && isValidCoordinate(input.latitudeDeg, input.longitudeDeg)) {
+      const latitudeDeg = input.latitudeDeg;
+      const longitudeDeg = input.longitudeDeg;
       return freeze({
         location: { name: typeof input.name === 'string' && input.name ? input.name : '自定义地点', latitudeDeg, longitudeDeg },
         warning: null,
@@ -76,7 +95,7 @@
     return freeze({
       location: { name: BEIJING.name, latitudeDeg: BEIJING.latitudeDeg, longitudeDeg: BEIJING.longitudeDeg },
       warning: { code: 'INVALID_LOCATION', message: '地点经纬度无效，已使用北京。' },
-      rejectedInput: input == null ? input : { ...input }
+      rejectedInput: rejectedInputSnapshot(input)
     });
   }
 
