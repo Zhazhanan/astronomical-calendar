@@ -500,7 +500,9 @@ function animate(){
   const tNow = performance.now();
   const dt = (tNow - lastTime); lastTime = tNow;
 
-  timeController.tick(dt);
+  if (timeController.getState().playing) {
+    timeController.tick(dt);
+  }
 
   updateEarthMoon(currentWorldState, dt);
 

@@ -175,7 +175,7 @@ test('offline page loads world-state dependencies in the required order', () => 
   }
   assert.match(page, /TimeController\.create\(\{/);
   assert.match(page, /timeController\.subscribe/);
-  assert.match(page, /timeController\.tick\(dt\)/);
+  assert.match(page, /if\s*\(timeController\.getState\(\)\.playing\)\s*\{\s*timeController\.tick\(dt\);\s*\}/);
   assert.doesNotMatch(page, /setInterval\(updateHUD/);
   assert.doesNotMatch(page, /solarTermSectorAtLongitude/);
   assert.doesNotMatch(page, /365\.2422/);
