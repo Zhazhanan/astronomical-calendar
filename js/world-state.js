@@ -40,6 +40,16 @@
     return value;
   }
 
+  function snapshot(value) {
+    if (Array.isArray(value)) return value.map(snapshot);
+    if (value && typeof value === 'object') {
+      const copy = {};
+      Object.keys(value).forEach(function (key) { copy[key] = snapshot(value[key]); });
+      return copy;
+    }
+    return value;
+  }
+
   function resolveDependencies(injected) {
     const dependencies = injected || {};
     const Astronomy = dependencies.Astronomy || defaultAstronomy;
@@ -48,16 +58,20 @@
     const lunarApi = dependencies.lunarApi || defaultLunarApi;
     if (!Astronomy || typeof Astronomy.earthHeliocentricState !== 'function' ||
       typeof Astronomy.solarGeocentricState !== 'function' || typeof Astronomy.moonGeocentricState !== 'function') {
-      throw new Error('Astronomy dependency is required');
+      throw new Error('Astronomy dependency must provide earthHeliocentricState, solarGeocentricState, moonGeocentricState, and eclipseSeasonHint');
     }
-    if (!Calendar || typeof Calendar.calendarState !== 'function' || typeof Calendar.annualTimeline !== 'function') {
-      throw new Error('Calendar dependency is required');
+    if (typeof Astronomy.eclipseSeasonHint !== 'function') {
+      throw new Error('Astronomy dependency must provide earthHeliocentricState, solarGeocentricState, moonGeocentricState, and eclipseSeasonHint');
+    }
+    if (!Calendar || typeof Calendar.calendarState !== 'function' || typeof Calendar.annualTimeline !== 'function' ||
+      typeof Calendar.resolveTimeZone !== 'function') {
+      throw new Error('Calendar dependency must provide calendarState, annualTimeline, and resolveTimeZone');
     }
     if (!Observer || typeof Observer.observerState !== 'function') {
-      throw new Error('Observer dependency is required');
+      throw new Error('Observer dependency must provide observerState');
     }
     if (!lunarApi || !lunarApi.Solar || typeof lunarApi.Solar.fromYmd !== 'function') {
-      throw new Error('lunarApi dependency is required');
+      throw new Error('lunarApi dependency must provide Solar.fromYmd');
     }
     return { Astronomy, Calendar, Observer, lunarApi };
   }
@@ -68,11 +82,16 @@
     }
   }
 
-  function annualCacheFor(Astronomy, lunarApi) {
-    let lunarCache = annualTimelineCache.get(Astronomy);
+  function annualCacheFor(Astronomy, Calendar, lunarApi) {
+    let calendarCache = annualTimelineCache.get(Astronomy);
+    if (!calendarCache) {
+      calendarCache = new WeakMap();
+      annualTimelineCache.set(Astronomy, calendarCache);
+    }
+    let lunarCache = calendarCache.get(Calendar);
     if (!lunarCache) {
       lunarCache = new WeakMap();
-      annualTimelineCache.set(Astronomy, lunarCache);
+      calendarCache.set(Calendar, lunarCache);
     }
     let yearCache = lunarCache.get(lunarApi);
     if (!yearCache) {
@@ -85,16 +104,16 @@
   function annualTimeline(year, timeZone, injectedDependencies) {
     const dependencies = resolveDependencies(injectedDependencies);
     const zone = dependencies.Calendar.resolveTimeZone(timeZone);
-    const cache = annualCacheFor(dependencies.Astronomy, dependencies.lunarApi);
+    const cache = annualCacheFor(dependencies.Astronomy, dependencies.Calendar, dependencies.lunarApi);
     const key = `${year}|${zone.timeZone}`;
     let cached = cache.get(key);
     if (!cached) {
-      cached = deepFreeze(dependencies.Calendar.annualTimeline(
+      cached = deepFreeze(snapshot(dependencies.Calendar.annualTimeline(
         year,
         zone.timeZone,
         dependencies.Astronomy,
         dependencies.lunarApi
-      ));
+      )));
       cache.set(key, cached);
     }
     return cloneFrozen(cached);
@@ -129,7 +148,7 @@
       eclipseSeasonHint: dependencies.Astronomy.eclipseSeasonHint(moonState.elongationDeg, moonState.nodeDistanceDeg)
     }, moonState);
     const sun = Object.assign({ solarTerms: calendar.solarTerms }, sunBase);
-    return deepFreeze({
+    return deepFreeze(snapshot({
       instantUtc,
       timeZone: calendar.displayTime.timeZone,
       location: observer.location,
@@ -146,9 +165,10 @@
         teachingAccuracy: true,
         lunar: calendar.support.lunar,
         timeZone: calendar.support.timeZone,
+        ganzhi: calendar.support.ganzhi,
         location: observer.warning
       }
-    });
+    }));
   }
 
   return Object.freeze({ create, annualTimeline });

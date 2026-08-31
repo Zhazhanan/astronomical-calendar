@@ -286,3 +286,42 @@ test('calendar state exposes the Spring Festival and Li Chun Ganzhi difference',
   assert.equal(state.ganzhi.liChun.name, '丙午');
   assert.equal(state.ganzhi.differs, true);
 });
+
+test('calendar state exposes local-year boundaries, progress, and exact neighboring phases', () => {
+  const instantUtc = Date.UTC(2026, 2, 20, 12);
+  const state = Calendar.calendarState({ instantUtc, timeZone: 'Asia/Shanghai', Astronomy, lunarApi });
+  assert.equal(state.gregorian.year, 2026);
+  assert.equal(state.gregorian.dayOfYear, 79);
+  assert.ok(state.gregorian.startUtc < instantUtc && instantUtc < state.gregorian.endUtc);
+  assert.ok(state.gregorian.yearProgressRatio > 0 && state.gregorian.yearProgressRatio < 1);
+  assert.ok(Object.isFrozen(state.gregorian));
+  assert.ok(state.lunar.currentPhase.instantUtc <= instantUtc);
+  assert.ok(state.lunar.nextPhase.instantUtc > instantUtc);
+  assert.equal(state.lunar.millisecondsUntilNextPhase, state.lunar.nextPhase.instantUtc - instantUtc);
+  for (const phase of [state.lunar.currentPhase, state.lunar.nextPhase]) {
+    const sun = Astronomy.solarGeocentricState(phase.instantUtc);
+    const moon = Astronomy.moonGeocentricState(phase.instantUtc, sun);
+    assert.ok(angularDistance(
+      Astronomy.normalizeDegrees(moon.longitudeDeg - sun.longitudeDeg), phase.targetElongationDeg
+    ) < 0.02);
+  }
+});
+
+test('calendar state keeps Ganzhi unsupported outside the documented local-year range', () => {
+  for (const year of [1899, 2101]) {
+    const state = Calendar.calendarState({
+      instantUtc: Date.UTC(year, 6, 1), timeZone: 'Asia/Shanghai', Astronomy, lunarApi
+    });
+    assert.equal(state.ganzhi.springFestival, null);
+    assert.equal(state.ganzhi.liChun, null);
+    assert.equal(state.support.ganzhi.code, 'GANZHI_YEAR_OUT_OF_RANGE');
+  }
+  for (const year of [1900, 2100]) {
+    const state = Calendar.calendarState({
+      instantUtc: Date.UTC(year, 6, 1), timeZone: 'Asia/Shanghai', Astronomy, lunarApi
+    });
+    assert.ok(state.ganzhi.springFestival);
+    assert.ok(state.ganzhi.liChun);
+    assert.equal(state.support.ganzhi, null);
+  }
+});

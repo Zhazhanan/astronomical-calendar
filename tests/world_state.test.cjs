@@ -97,7 +97,7 @@ test('invalid timezone and location are reported as structured support warnings'
 test('annual timeline caches by dependency identity and returns isolated frozen clones', () => {
   let calls = 0;
   const fakeAstronomy = {
-    earthHeliocentricState() {}, solarGeocentricState() {}, moonGeocentricState() {}
+    earthHeliocentricState() {}, solarGeocentricState() {}, moonGeocentricState() {}, eclipseSeasonHint() {}
   };
   const fakeLunarApi = { Solar: { fromYmd() {} } };
   const fakeCalendar = {
@@ -138,6 +138,25 @@ test('browser-style UMD dependencies compose the same state without CommonJS', (
   assert.equal(state.location.name, '北京');
 });
 
+test('actual offline browser script sequence defines a runnable WorldState without preloaded globals', () => {
+  const context = { Intl, Date, Math, Object, Array, Map, WeakMap, Set, Number, String, Boolean, Error, TypeError };
+  context.globalThis = context;
+  for (const relativePath of [
+    '../vendor/lunar/lunar.js',
+    '../js/astronomy-core.js',
+    '../js/calendar-core.js',
+    '../js/observer-core.js',
+    '../js/world-state.js',
+    '../js/time-controller.js'
+  ]) {
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, relativePath), 'utf8'), context, { filename: relativePath });
+  }
+  const state = context.AstroEducation.WorldState.create({ instantUtc: Date.UTC(2026, 1, 17, 4) });
+  assert.equal(state.lunar.day, 1);
+  assert.equal(state.displayTime.timeZone, 'Asia/Shanghai');
+  assert.equal(typeof context.AstroEducation.TimeController.create, 'function');
+});
+
 test('offline page loads world-state dependencies in the required order', () => {
   const page = fs.readFileSync(path.join(__dirname, '../tiangan_dizhi_offline.html'), 'utf8');
   const scripts = [
@@ -154,4 +173,71 @@ test('offline page loads world-state dependencies in the required order', () => 
     assert.ok(position > previous, `${script} must follow its dependency`);
     previous = position;
   }
+  assert.match(page, /TimeController\.create\(\{/);
+  assert.match(page, /timeController\.subscribe/);
+  assert.match(page, /timeController\.tick\(dt\)/);
+  assert.doesNotMatch(page, /setInterval\(updateHUD/);
+  assert.doesNotMatch(page, /solarTermSectorAtLongitude/);
+  assert.doesNotMatch(page, /365\.2422/);
+});
+
+test('WorldState snapshots dependency results without freezing or retaining their objects', () => {
+  const sharedEarth = { positionAu: { x: 1, y: 2, z: 3 } };
+  const sharedSun = { longitudeDeg: 1, rightAscensionDeg: 2, declinationDeg: 3 };
+  const sharedMoon = { vectorKm: { x: 4, y: 5, z: 6 }, elongationDeg: 7, nodeDistanceDeg: 8 };
+  const sharedCalendar = {
+    displayTime: { timeZone: 'Asia/Shanghai' }, gregorian: {}, lunar: {}, solarTerms: {}, ganzhi: {}, support: {}
+  };
+  const dependencies = {
+    Astronomy: {
+      earthHeliocentricState: () => sharedEarth,
+      solarGeocentricState: () => sharedSun,
+      moonGeocentricState: () => sharedMoon,
+      eclipseSeasonHint: () => ({ possible: false })
+    },
+    Calendar: {
+      resolveTimeZone: (timeZone) => ({ timeZone, warning: null }),
+      calendarState: () => sharedCalendar,
+      annualTimeline: () => ({})
+    },
+    Observer: { observerState: () => ({ location: { name: '测试', latitudeDeg: 1, longitudeDeg: 2 }, warning: null }) },
+    lunarApi: { Solar: { fromYmd() {} } }
+  };
+  const state = WorldState.create({ instantUtc: 1, timeZone: 'Asia/Shanghai', dependencies });
+  assert.notEqual(state.earth, sharedEarth);
+  assert.notEqual(state.sun, sharedSun);
+  assert.notEqual(state.moon.positionKm, sharedMoon.vectorKm);
+  assert.notEqual(state.gregorian, sharedCalendar.gregorian);
+  assert.equal(Object.isFrozen(sharedEarth), false);
+  sharedEarth.positionAu.x = 99;
+  assert.equal(state.earth.positionAu.x, 1);
+});
+
+test('WorldState annual timeline cache includes Calendar implementation identity', () => {
+  let firstCalls = 0;
+  let secondCalls = 0;
+  const AstronomyDependency = { earthHeliocentricState() {}, solarGeocentricState() {}, moonGeocentricState() {}, eclipseSeasonHint() {} };
+  const lunarDependency = { Solar: { fromYmd() {} } };
+  function calendar(callsRef, marker) {
+    return {
+      resolveTimeZone: (timeZone) => ({ timeZone, warning: null }), calendarState() {},
+      annualTimeline: () => { callsRef.count += 1; return { marker }; }
+    };
+  }
+  const firstRef = { count: firstCalls };
+  const secondRef = { count: secondCalls };
+  const firstCalendar = calendar(firstRef, 'first');
+  const secondCalendar = calendar(secondRef, 'second');
+  const base = { Astronomy: AstronomyDependency, Observer: { observerState() {} }, lunarApi: lunarDependency };
+  assert.equal(WorldState.annualTimeline(2026, 'Asia/Shanghai', Object.assign({}, base, { Calendar: firstCalendar })).marker, 'first');
+  assert.equal(WorldState.annualTimeline(2026, 'Asia/Shanghai', Object.assign({}, base, { Calendar: secondCalendar })).marker, 'second');
+  assert.equal(firstRef.count, 1);
+  assert.equal(secondRef.count, 1);
+});
+
+test('WorldState rejects incomplete dependencies with stable method contracts', () => {
+  assert.throws(
+    () => WorldState.create({ instantUtc: 1, dependencies: { Astronomy: {} } }),
+    /Astronomy dependency must provide earthHeliocentricState, solarGeocentricState, moonGeocentricState, and eclipseSeasonHint/
+  );
 });

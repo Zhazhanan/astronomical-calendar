@@ -350,11 +350,15 @@ function updateSunNow(worldState){
   document.getElementById('solarLon').textContent = '太阳黄经 (λ): ' + lon.toFixed(4) + '°';
   document.getElementById('solarAngleValue').textContent = '地球—太阳黄经角: ' + lon.toFixed(1) + '°（从春分点逆时针）';
   document.getElementById('sunCoords').textContent = `太阳 赤经 ${sun.rightAscensionDeg.toFixed(4)}°, 赤纬 ${sun.declinationDeg.toFixed(4)}°`;
-  // determine current jieqi index (24 sectors)
-  const currentTerm = AstroEducation.Astronomy.solarTermSectorAtLongitude(lon);
-  const sector = currentTerm.index;
-  document.getElementById('currentJieqi').textContent = '当前节气区: ' + currentTerm.name + ` (λ in [${(sector*15).toFixed(0)}°,${((sector+1)*15).toFixed(0)}°))`;
-  document.getElementById('toNextJieqi').textContent = '距下节气(估算): ' + ( ( ( ( ( ( (sector+1)*15 ) - lon ) / 360 ) * 365.2422 ) ).toFixed(3) ) + ' 天';
+  const terms = sun.solarTerms;
+  const currentTerm = terms.current;
+  const nextTerm = terms.next;
+  document.getElementById('currentJieqi').textContent = currentTerm
+    ? `当前节气: ${currentTerm.name} (λ ${currentTerm.longitudeDeg.toFixed(0)}°)`
+    : '当前节气: —';
+  document.getElementById('toNextJieqi').textContent = nextTerm
+    ? `距下节气 ${nextTerm.name}: ${(terms.millisecondsRemaining / 86400000).toFixed(3)} 天`
+    : '距下节气: —';
 }
 
 /* ----------------- earth & moon (simplified pure color) ----------------- */
@@ -386,24 +390,34 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
 });
 
 /* ----------------- HUD & animation ----------------- */
-let cachedWorldState;
+const timeController = AstroEducation.TimeController.create({
+  instantUtc: Date.now(),
+  timeZone: 'Asia/Shanghai',
+  location: { name: '北京', latitudeDeg: 39.9042, longitudeDeg: 116.4074 }
+});
 let currentWorldState;
-function worldStateFor(instantUtc){
-  if(!cachedWorldState || cachedWorldState.instantUtc !== instantUtc){
-    cachedWorldState = AstroEducation.WorldState.create({instantUtc});
-  }
-  return cachedWorldState;
+function updateHUD(worldState){
+  const display = worldState.displayTime;
+  const localValue = `${display.year}-${String(display.month).padStart(2,'0')}-${String(display.day).padStart(2,'0')} ${String(display.hour).padStart(2,'0')}:${String(display.minute).padStart(2,'0')}:${String(display.second).padStart(2,'0')} (${display.timeZone})`;
+  document.getElementById('localTime').textContent = '本地时间: ' + localValue;
+  document.getElementById('utcTime').textContent = 'UTC: ' + new Date(worldState.instantUtc).toISOString().replace('T',' ').slice(0,19) + 'Z';
+  updateSunNow(worldState);
 }
-function updateHUD(){
-  const currentDate = new Date();
-  currentWorldState = worldStateFor(currentDate.getTime());
-  document.getElementById('localTime').textContent = '本地时间: ' + currentDate.toLocaleString();
-  document.getElementById('utcTime').textContent = 'UTC: ' + currentDate.toISOString().replace('T',' ').substr(0,19) + 'Z';
-  updateSunNow(currentWorldState);
-}
-
-updateHUD();
-setInterval(updateHUD, 1000);
+timeController.subscribe((controllerState)=>{
+  currentWorldState = AstroEducation.WorldState.create({
+    instantUtc: controllerState.instantUtc,
+    timeZone: controllerState.timeZone,
+    location: controllerState.location
+  });
+  updateHUD(currentWorldState);
+});
+const initialControllerState = timeController.getState();
+currentWorldState = AstroEducation.WorldState.create({
+  instantUtc: initialControllerState.instantUtc,
+  timeZone: initialControllerState.timeZone,
+  location: initialControllerState.location
+});
+updateHUD(currentWorldState);
 
 const labelWorldPosition = new THREE.Vector3();
 const labelScreenPosition = new THREE.Vector3();
@@ -485,6 +499,8 @@ function animate(){
   requestAnimationFrame(animate);
   const tNow = performance.now();
   const dt = (tNow - lastTime); lastTime = tNow;
+
+  timeController.tick(dt);
 
   updateEarthMoon(currentWorldState, dt);
 

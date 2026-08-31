@@ -21,6 +21,7 @@
   const MILLISECONDS_PER_DAY = 24 * MILLISECONDS_PER_HOUR;
   const formatterCache = new Map();
   const solarTermsCache = new WeakMap();
+  const principalPhasesCache = new WeakMap();
 
   function freeze(value) {
     if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -408,6 +409,44 @@
     return freeze(phases.sort((first, second) => first.instantUtc - second.instantUtc));
   }
 
+  function principalMoonPhasesForGregorianYear(year, Astronomy) {
+    if (!Number.isInteger(year)) throw new TypeError('year must be an integer');
+    assertAstronomy(Astronomy);
+    let yearCache = principalPhasesCache.get(Astronomy);
+    if (!yearCache) {
+      yearCache = new Map();
+      principalPhasesCache.set(Astronomy, yearCache);
+    }
+    const cached = yearCache.get(year);
+    if (cached) return cloneFrozen(cached);
+    const phases = principalMoonPhasesForInterval(
+      Date.UTC(year, 0, 1) - 40 * MILLISECONDS_PER_DAY,
+      Date.UTC(year + 1, 0, 1) + 40 * MILLISECONDS_PER_DAY,
+      Astronomy
+    );
+    const immutable = freeze(phases);
+    yearCache.set(year, immutable);
+    return cloneFrozen(immutable);
+  }
+
+  function currentAndNextEvent(instantUtc, events) {
+    assertFiniteInstant(instantUtc);
+    let current = null;
+    let next = null;
+    for (const event of events) {
+      if (event.instantUtc <= instantUtc) current = event;
+      if (event.instantUtc > instantUtc) {
+        next = event;
+        break;
+      }
+    }
+    return freeze({
+      current: current ? cloneFrozen(current) : null,
+      next: next ? cloneFrozen(next) : null,
+      millisecondsRemaining: next ? next.instantUtc - instantUtc : null
+    });
+  }
+
   function ratio(instantUtc, startUtc, endUtc) {
     return Math.max(0, Math.min(1, (instantUtc - startUtc) / (endUtc - startUtc)));
   }
@@ -483,27 +522,57 @@
     assertFiniteInstant(instantUtc);
     const zone = resolveTimeZone(options && options.timeZone);
     const displayTime = localDateParts(instantUtc, zone.timeZone);
-    const lunar = lunarForLocalDate(displayTime, options && options.lunarApi);
+    const lunarBase = lunarForLocalDate(displayTime, options && options.lunarApi);
     const terms = solarTermsForGregorianYear(displayTime.year, options && options.Astronomy);
     const nextTerms = solarTermsForGregorianYear(displayTime.year + 1, options && options.Astronomy);
     const previousTerms = solarTermsForGregorianYear(displayTime.year - 1, options && options.Astronomy);
     const solarTermState = currentAndNextSolarTerm(instantUtc, previousTerms.concat(terms), nextTerms);
+    const phaseEvents = principalMoonPhasesForGregorianYear(displayTime.year - 1, options && options.Astronomy)
+      .concat(principalMoonPhasesForGregorianYear(displayTime.year, options && options.Astronomy))
+      .concat(principalMoonPhasesForGregorianYear(displayTime.year + 1, options && options.Astronomy))
+      .sort((first, second) => first.instantUtc - second.instantUtc);
+    const phaseState = currentAndNextEvent(instantUtc, phaseEvents);
+    const lunar = freeze(Object.assign({}, lunarBase, {
+      currentPhase: phaseState.current,
+      nextPhase: phaseState.next,
+      millisecondsUntilNextPhase: phaseState.millisecondsRemaining
+    }));
     const liChun = terms.find((term) => term.name === '立春');
-    const springFestival = lunar.supported ? ganzhiForYear(lunar.year) : null;
-    const liChunGanzhi = ganzhiForYear(instantUtc < liChun.instantUtc ? displayTime.year - 1 : displayTime.year);
+    const ganzhiSupported = displayTime.year >= MIN_SUPPORTED_YEAR && displayTime.year <= MAX_SUPPORTED_YEAR;
+    const springFestival = ganzhiSupported && lunar.supported ? ganzhiForYear(lunar.year) : null;
+    const liChunGanzhi = ganzhiSupported
+      ? ganzhiForYear(instantUtc < liChun.instantUtc ? displayTime.year - 1 : displayTime.year)
+      : null;
     const differs = Boolean(springFestival && springFestival.name !== liChunGanzhi.name);
+    const localYearStart = zonedLocalMidnightToUtc({ year: displayTime.year, month: 1, day: 1 }, zone.timeZone).instantUtc;
+    const localYearEnd = zonedLocalMidnightToUtc({ year: displayTime.year + 1, month: 1, day: 1 }, zone.timeZone).instantUtc;
+    const dayOfYear = Math.floor((Date.UTC(displayTime.year, displayTime.month - 1, displayTime.day) - Date.UTC(displayTime.year, 0, 1)) / MILLISECONDS_PER_DAY) + 1;
     return freeze({
       displayTime,
-      gregorian: freeze({ year: displayTime.year, month: displayTime.month, day: displayTime.day }),
+      gregorian: freeze({
+        year: displayTime.year,
+        month: displayTime.month,
+        day: displayTime.day,
+        dayOfYear,
+        startUtc: localYearStart,
+        endUtc: localYearEnd,
+        yearProgressRatio: ratio(instantUtc, localYearStart, localYearEnd)
+      }),
       lunar,
       solarTerms: solarTermState,
       ganzhi: freeze({
         springFestival,
         liChun: liChunGanzhi,
         differs,
-        explanation: differs ? '春节与立春采用不同的年界，因此此时干支年名称不同。' : '春节与立春年界在此时给出相同的干支年名称。'
+        explanation: ganzhiSupported
+          ? (differs ? '春节与立春采用不同的年界，因此此时干支年名称不同。' : '春节与立春年界在此时给出相同的干支年名称。')
+          : '当地年份超出 1900–2100 支持范围，未计算干支年。'
       }),
-      support: freeze({ lunar: lunar.warning, timeZone: zone.warning })
+      support: freeze({
+        lunar: lunar.warning,
+        timeZone: zone.warning,
+        ganzhi: ganzhiSupported ? null : warning('GANZHI_YEAR_OUT_OF_RANGE', '干支年计算仅支持 1900–2100 的当地年份。')
+      })
     });
   }
 
@@ -520,6 +589,7 @@
     solarTermsForGregorianYear,
     currentAndNextSolarTerm,
     principalMoonPhasesForInterval,
+    principalMoonPhasesForGregorianYear,
     annualTimeline,
     calendarState
   });
