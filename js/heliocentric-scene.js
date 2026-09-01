@@ -56,9 +56,10 @@
       earthOrbitGroup.rotation.y = -radians(s.earth.perihelionLongitudeDeg || 0);
       if (orbitChanged(lastNode, lastInclination, lastArgument, lastEccentricity, s.moon)) { writeMoonOrbit(moonOrbitGeometry, s.moon, nodeA, nodeD, peri, apo); setLineEndpoints(nodeLine.geometry, nodeA, nodeD); ascendingNode.position.copy(nodeA); descendingNode.position.copy(nodeD); perigee.position.copy(peri); apogee.position.copy(apo); updateOrbitLabels(labels, s.moon, nodeA, nodeD, peri, apo); lastNode = s.moon.ascendingNodeLongitudeDeg; lastInclination = s.moon.orbit.inclinationDeg; lastArgument = s.moon.argumentOfPerigeeDeg; lastEccentricity = s.moon.orbit.eccentricity; }
     }
+    function resetView() { camera.position.set(0, 38, 68); if (controls && controls.target && controls.target.set) controls.target.set(0, 0, 0); if (controls && controls.update) controls.update(); }
     function dispose() { if (disposed) return; disposed = true; if (controls && controls.dispose) controls.dispose(); resources.forEach(disposeResource); labels.forEach(removeLabel); }
     scene.userData = { earthGroup, earthOrbitGroup, earthAxisGroup, earthSpinGroup, observerMarker, moon, moonOrbit, labels };
-    return Object.freeze({ scene, camera, controls, update, setLabelsVisible: function (visible) { labels.forEach(function (l) { l.style.display = visible ? '' : 'none'; }); }, dispose });
+    return Object.freeze({ scene, camera, controls, update, resetView, setLabelsVisible: function (visible) { labels.forEach(function (l) { l.style.display = visible ? '' : 'none'; }); }, dispose });
   }
   function createLabels(layer) { return ['太阳中心视角', '升交点', '降交点', '近地点', '远地点', LEGEND].map(function (text) { const e = typeof document !== 'undefined' && document.createElement ? document.createElement('span') : { style: {} }; e.textContent = text; e.className = 'scene-label'; e.style = e.style || {}; if (layer && layer.appendChild) layer.appendChild(e); return e; }); }
   function createGlowCanvas() {

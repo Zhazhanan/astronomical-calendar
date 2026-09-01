@@ -54,9 +54,10 @@
     function updateLabelPositions() { const view = rectFor(config.interactionElement), layer = rectFor(config.labelLayer); labelRecords.forEach(function (record) { if (record.hudSlot) { record.element.style.left = (view.left - layer.left + view.width * record.hudSlot.x).toFixed(2) + 'px'; record.element.style.top = (view.top - layer.top + view.height * record.hudSlot.y).toFixed(2) + 'px'; return; } projected.copy(record.anchor); if (projected.project) projected.project(camera); record.element.style.left = (view.left - layer.left + (projected.x + 1) * 0.5 * view.width).toFixed(2) + 'px'; record.element.style.top = (view.top - layer.top + (1 - projected.y) * 0.5 * view.height).toFixed(2) + 'px'; }); }
     function render(renderer) { if (renderer && renderer.render) renderer.render(scene, camera); updateLabelPositions(); }
     function setLabelsVisible(visible) { labelRecords.forEach(function (record) { record.element.style.display = visible ? '' : 'none'; }); }
+    function resetView() { camera.position.set(0, 31, 53); if (controls && controls.target && controls.target.set) controls.target.set(0, 0, 0); if (controls && controls.update) controls.update(); }
     function dispose() { if (disposed) return; disposed = true; if (controls && controls.dispose) controls.dispose(); resources.forEach(disposeResource); labelRecords.forEach(function (record) { if (record.element.parentNode && record.element.parentNode.removeChild) record.element.parentNode.removeChild(record.element); }); }
     scene.userData = scene.userData || {}; Object.assign(scene.userData, { root, earth, ecliptic, equator, springRay, termTicks, solarArc, sun, earthSunRay, moon, moonProjection, latitudeArc, phaseIndicator, labels, labelProjection: projected });
-    return { scene, camera, controls, interactionElement: config.interactionElement, update, render, updateLabelPositions, setLabelsVisible, dispose };
+    return { scene, camera, controls, interactionElement: config.interactionElement, update, render, updateLabelPositions, resetView, setLabelsVisible, dispose };
   }
   function vector(THREE, x, y, z) { return new THREE.Vector3(x, y, z); }
   function mesh(THREE, geometry, material, resources) { resources.push(geometry, material); return new THREE.Mesh(geometry, material); }
