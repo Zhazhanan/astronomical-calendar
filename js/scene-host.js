@@ -190,6 +190,7 @@
         const scene = scenes[viewport.id];
         const interaction = scene && scene.interactionElement;
         if (interaction && interaction.style) interaction.style.pointerEvents = viewport.visible ? '' : 'none';
+        if (scene && typeof scene.setLabelsVisible === 'function') scene.setLabelsVisible(viewport.visible);
       });
     }
 

@@ -91,3 +91,19 @@ test('WebGL loss pauses the page clock, reports its status, and restores only pr
   options.onContextChange({ type: 'restored' });
   assert.equal(s.controller.getState().playing, false);
 });
+
+test('context restored while hidden waits for visibility before restoring prior playback', () => {
+  const s = setup();
+  let options;
+  s.education.SceneHost.create = (next) => { options = next; return s.host; };
+  App.start({ AstroEducation: s.education, document: s.document, window: s.window, THREE: {}, timeController: s.controller, scenes: s.scenes });
+  s.controller.play();
+  options.onContextChange({ type: 'lost' });
+  s.document.hidden = true;
+  s.document.emit('visibilitychange');
+  options.onContextChange({ type: 'restored' });
+  assert.equal(s.controller.getState().playing, false);
+  s.document.hidden = false;
+  s.document.emit('visibilitychange');
+  assert.equal(s.controller.getState().playing, true);
+});

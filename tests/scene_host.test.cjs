@@ -189,6 +189,35 @@ test('layout mode updates the real grid and mobile hides the non-selected intera
   host.dispose();
 });
 
+test('mobile scene selection also hides labels from the inactive shared label layer', () => {
+  const environment = productionFakes();
+  const visibility = { heliocentric: [], geocentric: [] };
+  const host = SceneHost.create({
+    canvas: environment.canvas,
+    containers: environment.containers,
+    sceneGrid: environment.sceneGrid,
+    THREE: environment.THREE,
+    scenes: {
+      heliocentric: { setLabelsVisible(value) { visibility.heliocentric.push(value); } },
+      geocentric: { setLabelsVisible(value) { visibility.geocentric.push(value); } }
+    },
+    window: environment.window
+  });
+  visibility.heliocentric.length = 0;
+  visibility.geocentric.length = 0;
+  host.setLayoutMode('mobile');
+  assert.deepEqual(visibility, { heliocentric: [true], geocentric: [false] });
+  visibility.heliocentric.length = 0;
+  visibility.geocentric.length = 0;
+  host.setSelectedScene('geocentric');
+  assert.deepEqual(visibility, { heliocentric: [false], geocentric: [true] });
+  visibility.heliocentric.length = 0;
+  visibility.geocentric.length = 0;
+  host.setLayoutMode('tablet');
+  assert.deepEqual(visibility, { heliocentric: [true], geocentric: [true] });
+  host.dispose();
+});
+
 test('resume is idempotent and context restoration resumes only a host that was running', () => {
   const environment = productionFakes();
   let rebuilds = 0;
