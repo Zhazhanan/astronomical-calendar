@@ -325,3 +325,43 @@ test('calendar state keeps Ganzhi unsupported outside the documented local-year 
     assert.equal(state.support.ganzhi, null);
   }
 });
+
+test('warmed calendar state finds neighboring annual events without rebuilding annual tables', () => {
+  let solarCalls = 0;
+  let moonCalls = 0;
+  const countedAstronomy = {
+    ...Astronomy,
+    solarGeocentricState(instantUtc) {
+      solarCalls += 1;
+      return Astronomy.solarGeocentricState(instantUtc);
+    },
+    moonGeocentricState(instantUtc, sun) {
+      moonCalls += 1;
+      return Astronomy.moonGeocentricState(instantUtc, sun);
+    }
+  };
+  const options = {
+    instantUtc: Date.UTC(2026, 6, 1, 12),
+    timeZone: 'Asia/Shanghai',
+    Astronomy: countedAstronomy,
+    lunarApi
+  };
+  Calendar.calendarState(options);
+  solarCalls = 0;
+  moonCalls = 0;
+
+  const states = Array.from({ length: 80 }, (_, index) => Calendar.calendarState({
+    ...options,
+    instantUtc: options.instantUtc + index * 60 * 1000
+  }));
+  assert.equal(solarCalls, 0, 'warmed annual event tables must not solve roots again');
+  assert.equal(moonCalls, 0, 'warmed annual event tables must not solve roots again');
+  assert.notEqual(states[0].lunar.currentPhase, states[1].lunar.currentPhase);
+  assert.notEqual(states[0].solarTerms.current, states[1].solarTerms.current);
+  for (const state of states) {
+    assert.ok(Object.isFrozen(state.lunar.currentPhase));
+    assert.ok(Object.isFrozen(state.lunar.nextPhase));
+    assert.ok(Object.isFrozen(state.solarTerms.current));
+    assert.ok(Object.isFrozen(state.solarTerms.next));
+  }
+});

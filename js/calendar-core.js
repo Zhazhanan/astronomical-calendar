@@ -314,7 +314,7 @@
     });
   }
 
-  function solarTermsForGregorianYear(year, Astronomy) {
+  function cachedSolarTermsForGregorianYear(year, Astronomy) {
     if (!Number.isInteger(year)) throw new TypeError('year must be an integer');
     assertAstronomy(Astronomy);
     let yearCache = solarTermsCache.get(Astronomy);
@@ -323,7 +323,7 @@
       solarTermsCache.set(Astronomy, yearCache);
     }
     const cached = yearCache.get(year);
-    if (cached) return cloneFrozen(cached);
+    if (cached) return cached;
     const searchStart = Date.UTC(year, 0, 1) - 5 * MILLISECONDS_PER_DAY;
     const searchEnd = Date.UTC(year + 1, 0, 1) + 5 * MILLISECONDS_PER_DAY;
     const names = Astronomy.SOLAR_TERMS || [];
@@ -344,7 +344,11 @@
     }
     const immutable = freeze(terms);
     yearCache.set(year, immutable);
-    return cloneFrozen(immutable);
+    return immutable;
+  }
+
+  function solarTermsForGregorianYear(year, Astronomy) {
+    return cloneFrozen(cachedSolarTermsForGregorianYear(year, Astronomy));
   }
 
   function currentAndNextSolarTerm(instantUtc, yearTerms, nextYearTerms) {
@@ -409,7 +413,7 @@
     return freeze(phases.sort((first, second) => first.instantUtc - second.instantUtc));
   }
 
-  function principalMoonPhasesForGregorianYear(year, Astronomy) {
+  function cachedPrincipalMoonPhasesForGregorianYear(year, Astronomy) {
     if (!Number.isInteger(year)) throw new TypeError('year must be an integer');
     assertAstronomy(Astronomy);
     let yearCache = principalPhasesCache.get(Astronomy);
@@ -418,7 +422,7 @@
       principalPhasesCache.set(Astronomy, yearCache);
     }
     const cached = yearCache.get(year);
-    if (cached) return cloneFrozen(cached);
+    if (cached) return cached;
     const phases = principalMoonPhasesForInterval(
       Date.UTC(year, 0, 1) - 40 * MILLISECONDS_PER_DAY,
       Date.UTC(year + 1, 0, 1) + 40 * MILLISECONDS_PER_DAY,
@@ -426,7 +430,11 @@
     );
     const immutable = freeze(phases);
     yearCache.set(year, immutable);
-    return cloneFrozen(immutable);
+    return immutable;
+  }
+
+  function principalMoonPhasesForGregorianYear(year, Astronomy) {
+    return cloneFrozen(cachedPrincipalMoonPhasesForGregorianYear(year, Astronomy));
   }
 
   function currentAndNextEvent(instantUtc, events) {
@@ -439,6 +447,36 @@
         next = event;
         break;
       }
+    }
+    return freeze({
+      current: current ? cloneFrozen(current) : null,
+      next: next ? cloneFrozen(next) : null,
+      millisecondsRemaining: next ? next.instantUtc - instantUtc : null
+    });
+  }
+
+  function firstEventAfter(instantUtc, events) {
+    let low = 0;
+    let high = events.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (events[middle].instantUtc <= instantUtc) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+
+  function currentAndNextCachedEvent(instantUtc, eventLists) {
+    assertFiniteInstant(instantUtc);
+    let current = null;
+    let next = null;
+    for (const events of eventLists) {
+      if (!events || events.length === 0) continue;
+      const index = firstEventAfter(instantUtc, events);
+      const previous = events[index - 1];
+      const following = events[index];
+      if (previous && (!current || previous.instantUtc > current.instantUtc)) current = previous;
+      if (following && (!next || following.instantUtc < next.instantUtc)) next = following;
     }
     return freeze({
       current: current ? cloneFrozen(current) : null,
@@ -523,15 +561,17 @@
     const zone = resolveTimeZone(options && options.timeZone);
     const displayTime = localDateParts(instantUtc, zone.timeZone);
     const lunarBase = lunarForLocalDate(displayTime, options && options.lunarApi);
-    const terms = solarTermsForGregorianYear(displayTime.year, options && options.Astronomy);
-    const nextTerms = solarTermsForGregorianYear(displayTime.year + 1, options && options.Astronomy);
-    const previousTerms = solarTermsForGregorianYear(displayTime.year - 1, options && options.Astronomy);
-    const solarTermState = currentAndNextSolarTerm(instantUtc, previousTerms.concat(terms), nextTerms);
-    const phaseEvents = principalMoonPhasesForGregorianYear(displayTime.year - 1, options && options.Astronomy)
-      .concat(principalMoonPhasesForGregorianYear(displayTime.year, options && options.Astronomy))
-      .concat(principalMoonPhasesForGregorianYear(displayTime.year + 1, options && options.Astronomy))
-      .sort((first, second) => first.instantUtc - second.instantUtc);
-    const phaseState = currentAndNextEvent(instantUtc, phaseEvents);
+    const terms = cachedSolarTermsForGregorianYear(displayTime.year, options && options.Astronomy);
+    const solarTermState = currentAndNextCachedEvent(instantUtc, [
+      cachedSolarTermsForGregorianYear(displayTime.year - 1, options && options.Astronomy),
+      terms,
+      cachedSolarTermsForGregorianYear(displayTime.year + 1, options && options.Astronomy)
+    ]);
+    const phaseState = currentAndNextCachedEvent(instantUtc, [
+      cachedPrincipalMoonPhasesForGregorianYear(displayTime.year - 1, options && options.Astronomy),
+      cachedPrincipalMoonPhasesForGregorianYear(displayTime.year, options && options.Astronomy),
+      cachedPrincipalMoonPhasesForGregorianYear(displayTime.year + 1, options && options.Astronomy)
+    ]);
     const lunar = freeze(Object.assign({}, lunarBase, {
       currentPhase: phaseState.current,
       nextPhase: phaseState.next,
