@@ -176,9 +176,9 @@ test('offline page loads world-state dependencies in the required order', () => 
     assert.ok(position > previous, `${script} must follow its dependency`);
     previous = position;
   }
-  assert.match(page, /TimeController\.create\(\{/);
-  assert.match(page, /timeController\.subscribe/);
-  assert.match(page, /if\s*\(timeController\.getState\(\)\.playing\)\s*\{\s*timeController\.tick\(dt\);\s*\}/);
+  assert.ok(page.indexOf('src="js/app.js"') > previous, 'application must follow its dependencies');
+  assert.match(page, /AstroEducation\.App\.start\(\)/);
+  assert.doesNotMatch(page, /requestAnimationFrame\(animate\)/);
   assert.doesNotMatch(page, /setInterval\(updateHUD/);
   assert.doesNotMatch(page, /solarTermSectorAtLongitude/);
   assert.doesNotMatch(page, /365\.2422/);

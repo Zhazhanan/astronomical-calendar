@@ -39,10 +39,19 @@ class OfflinePageControlsTest(unittest.TestCase):
         self.assertNotIn('id="solar-angle-core"', self.html)
         self.assertNotIn('function solarLongitudePrecise', self.html)
 
-    def test_uses_world_state_moon_position_without_wall_clock_orbit(self):
-        self.assertIn('worldState.moon.positionKm', self.html)
-        self.assertIn('rotateCanonicalVectorToDisplay(moonPositionKm, obliquity)', self.html)
-        self.assertNotIn('performance.now() * s.speed', self.html)
+    def test_loads_the_synchronized_dual_scene_application(self):
+        self.assertEqual(self.html.count('id="astronomyCanvas"'), 1)
+        self.assertIn('id="heliocentricViewport"', self.html)
+        self.assertIn('id="geocentricViewport"', self.html)
+        self.assertIn('js/scene-host.js', self.html)
+        self.assertIn('js/heliocentric-scene.js', self.html)
+        self.assertIn('js/geocentric-scene.js', self.html)
+        self.assertIn('js/app.js', self.html)
+        self.assertIn("AstroEducation.App.start()", self.html)
+
+    def test_has_no_legacy_mixed_scene_or_spatial_jiazi_renderer(self):
+        for marker in ('createJiaZiLines', 'simplifiedMoon', 'new THREE.WebGLRenderer', 'requestAnimationFrame(animate)', 'canvasContainer'):
+            self.assertNotIn(marker, self.html)
 
 
 if __name__ == "__main__":
