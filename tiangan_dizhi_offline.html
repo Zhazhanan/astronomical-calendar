@@ -2,34 +2,41 @@
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<title>天干·地支·节气 · 日地月教学视图</title>
+<title>日—地—月与中国历法 · 教学视图</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-  :root{color-scheme:dark;--space:#020617;--panel:rgba(3,7,18,.86);--border:rgba(148,163,184,.28);--text:#f8fafc;--muted:#cbd5e1;--accent:#38bdf8}
-  *{box-sizing:border-box} html,body{height:100%;margin:0;overflow:hidden;background:var(--space);color:var(--text);font-family:Inter,"PingFang SC","Microsoft YaHei",Arial,sans-serif}
-  .scene-grid{position:fixed;inset:0;z-index:1;display:grid;pointer-events:none}.scene-grid.scene-layout-desktop{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:1fr}.scene-grid.scene-layout-tablet{grid-template-columns:1fr;grid-template-rows:repeat(2,minmax(0,1fr))}.scene-grid.scene-layout-mobile{grid-template-columns:1fr;grid-template-rows:1fr}
-  .scene-viewport{position:relative;z-index:1;min-width:0;min-height:0;border-right:1px solid rgba(148,163,184,.25)}.scene-viewport h2{position:absolute;left:16px;top:16px;margin:0;font-size:15px;letter-spacing:.04em;pointer-events:none}.scene-interaction{position:absolute;inset:0;pointer-events:auto;touch-action:none}#astronomyCanvas{position:absolute;inset:0;z-index:0;width:100%;height:100%;pointer-events:none}#labelLayer{position:fixed;inset:0;z-index:10;overflow:hidden;pointer-events:none}.scene-label{color:#f8fafc;position:absolute;white-space:nowrap;text-shadow:0 1px 3px #000,0 0 8px rgba(0,0,0,.95)}
-  #ui,#hud,#credits{color:var(--text);background:var(--panel);border:1px solid var(--border);box-shadow:0 16px 40px rgba(0,0,0,.34);backdrop-filter:blur(12px)}#ui{position:absolute;left:12px;top:12px;width:min(350px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;z-index:50;padding:16px;border-radius:14px}#ui h1{margin:0 0 12px;font-size:18px;line-height:1.4}label{display:block;margin:7px 0;font-size:14px;line-height:1.5;color:var(--text)}input[disabled]{opacity:.55}.btn{min-height:38px;padding:8px 13px;color:#fff;background:linear-gradient(180deg,#38bdf8,#0ea5e9);border:1px solid rgba(125,211,252,.55);border-radius:8px;font-weight:600;cursor:pointer;margin-right:7px}.small,.note,#appStatus{font-size:12px;line-height:1.55;color:var(--muted);margin-top:8px}#hud{position:absolute;right:12px;top:12px;z-index:50;width:300px;padding:13px 15px;border-radius:12px;font-size:13px;line-height:1.7;font-variant-numeric:tabular-nums}#credits{position:absolute;right:12px;bottom:12px;z-index:50;padding:7px 10px;border-radius:8px;font-size:12px;color:#94a3b8}
-  .mobile-scenes{display:none}@media (max-width:600px){.mobile-scenes{display:block}}@media (max-width:720px){#ui{max-height:46vh;padding:13px}#hud{left:12px;right:12px;top:auto;bottom:12px;width:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 12px;font-size:12px;line-height:1.45}#credits{display:none}}
-</style>
+<link rel="stylesheet" href="styles/astronomy-education.css">
 </head>
 <body>
-<section class="scene-grid scene-layout-desktop" data-layout="desktop" aria-label="日地月双视角">
-  <article id="heliocentricViewport" class="scene-viewport"><h2>太阳中心视角</h2><div class="scene-interaction" aria-label="拖动旋转太阳中心场景"></div></article>
-  <article id="geocentricViewport" class="scene-viewport"><h2>地球中心视角</h2><div class="scene-interaction" aria-label="拖动旋转地球中心场景"></div></article>
-  <canvas id="astronomyCanvas" aria-label="太阳、地球与月球三维教学场景"></canvas>
-</section>
-<div id="labelLayer" aria-hidden="true"></div>
-<div id="ui"><h1>天干·地支·节气</h1>
-  <label><input id="showEcl" type="checkbox" checked disabled> 黄道、赤道与二十四节气由地球中心视角显示</label>
-  <label><input id="showSolarAngle" type="checkbox" checked disabled> 太阳黄经角由地球中心视角显示</label>
-  <label><input id="showJiazi" type="checkbox" disabled> 六十甲子空间连线（本教学视图不使用）</label>
-  <div class="small">大小与距离采用不同增强比例。太阳、地球、月球的位置为教学级近似，仅用于可视化与教育展示，不可用于导航或日食、月食预测。</div>
-  <div class="mobile-scenes" aria-label="手机场景选择"><button id="heliocentricSceneBtn" class="btn" aria-pressed="true">太阳中心</button><button id="geocentricSceneBtn" class="btn" aria-pressed="false">地球中心</button></div>
-  <div style="margin-top:8px"><button id="resetBtn" class="btn">重置两个视角</button><button id="snapBtn" class="btn" aria-label="导出 3D PNG（不含文字标签）" title="导出 3D PNG（不含文字标签）">导出 3D PNG（不含文字标签）</button></div><div id="appStatus" role="status"></div>
-</div>
-<div id="hud"><div id="localTime">本地时间: —</div><div id="utcTime">UTC: —</div><div id="solarLon">太阳黄经 (λ): —</div><div id="solarAngleValue">地球—太阳黄经角: —</div><div id="currentJieqi">当前节气: —</div><div id="toNextJieqi">距下节气: —</div><div id="sunCoords">太阳赤经/赤纬: —</div></div>
-<div id="credits">离线版 · 深空主题 · 高对比教学视图</div>
+<header class="app-header"><p class="eyebrow">离线天文学习工具</p><h1>日—地—月与中国历法</h1><p>用两个互补视角，观察季节、节气、月相与地球自转的关系。</p></header>
+<main id="appMain">
+  <section id="timeControls" class="panel time-controls" aria-labelledby="timeControlsTitle">
+    <div class="section-heading"><h2 id="timeControlsTitle">时间与观察地点</h2><p>选择时刻、速度和观察位置；显示结果以教学级模型为准。</p></div>
+    <div class="control-grid">
+      <label>日期和时间<input id="dateTimeInput" type="datetime-local" aria-label="日期和时间"></label>
+      <div class="button-group" aria-label="日期控制"><button id="previousDayButton" type="button">前一天</button><button id="todayButton" type="button">今天</button><button id="nextDayButton" type="button">后一天</button></div>
+      <div class="button-group" aria-label="播放控制"><button id="playPauseButton" type="button" aria-pressed="false">播放</button><label class="compact-label">速度<select id="speedSelect" aria-label="时间推进速度"><option value="1">1 天/秒</option><option value="7">7 天/秒</option><option value="30">30 天/秒</option></select></label></div>
+      <label>时区<select id="timeZoneSelect"><option value="Asia/Shanghai" selected>上海（Asia/Shanghai）</option><option value="local">浏览器本地（自动解析 IANA 名称）</option></select></label>
+      <label>观察地点<select id="locationSelect"><option value="beijing" selected>北京</option><option value="shanghai">上海</option><option value="guangzhou">广州</option><option value="custom">自定义地点</option></select></label>
+      <label>纬度（°）<input id="latitudeInput" type="number" step="0.01" value="39.90" disabled></label>
+      <label>经度（°）<input id="longitudeInput" type="number" step="0.01" value="116.40" disabled></label>
+    </div>
+    <fieldset class="layer-controls"><legend>显示图层</legend><label><input id="showOrbit" type="checkbox" checked>轨道与黄道</label><label><input id="showLabels" type="checkbox" checked>名称与角度标签</label><label><input id="showObserver" type="checkbox" checked>观察者标记</label><label><input id="showDayNight" type="checkbox" checked>昼夜分界</label><label><input id="showEcl" type="checkbox" checked disabled>黄道、赤道与二十四节气</label><label><input id="showSolarAngle" type="checkbox" checked disabled>太阳黄经角</label><label class="visually-muted"><input id="showJiazi" type="checkbox" disabled>六十甲子空间连线（不使用）</label></fieldset>
+    <div class="scene-actions"><button id="resetBtn" type="button">重置两个视角</button><button id="snapBtn" type="button" aria-label="导出 3D PNG（不含文字标签）" title="导出 3D PNG（不含文字标签）">导出 3D PNG（不含文字标签）</button></div>
+  </section>
+  <nav id="sceneTabs" class="scene-tabs" aria-label="移动端场景切换"><button id="heliocentricSceneBtn" type="button" aria-pressed="true">太阳中心视角</button><button id="geocentricSceneBtn" type="button" aria-pressed="false">地球中心视角</button></nav>
+  <section class="scene-grid scene-layout-desktop" data-layout="desktop" aria-label="日地月双视角">
+    <article id="heliocentricViewport" class="scene-viewport"><div class="scene-title"><span>视角 A</span><h2>太阳中心</h2><p>看地球公转、黄道与月球轨道倾角。</p></div><div class="scene-interaction" aria-label="拖动旋转太阳中心场景"></div></article>
+    <article id="geocentricViewport" class="scene-viewport"><div class="scene-title"><span>视角 B</span><h2>地球中心</h2><p>看太阳黄经、节气、月相与交点。</p></div><div class="scene-interaction" aria-label="拖动旋转地球中心场景"></div></article>
+    <canvas id="astronomyCanvas" aria-label="太阳、地球与月球三维教学场景"></canvas>
+  </section>
+  <div id="labelLayer" aria-hidden="true"></div>
+  <section class="panel observation-readout" aria-labelledby="readoutTitle"><div class="section-heading"><h2 id="readoutTitle">当前读数</h2><p>由统一的天文状态驱动，便于对照两种视角。</p></div><div id="hud" class="hud-grid"><div id="localTime">本地时间: —</div><div id="utcTime">UTC: —</div><div id="solarLon">太阳黄经 (λ): —</div><div id="solarAngleValue">地球—太阳黄经角: —</div><div id="currentJieqi">当前节气: —</div><div id="toNextJieqi">距下节气: —</div><div id="sunCoords">太阳赤经/赤纬: —</div></div></section>
+  <section id="annualTimeline" class="panel annual-timeline" aria-labelledby="timelineTitle"><div class="section-heading"><h2 id="timelineTitle">全年节气时间轴</h2><p>春分为黄经 0°；每 15° 进入一个节气。</p></div><div class="timeline-scroll" tabindex="0" aria-label="全年二十四节气时间轴"><svg viewBox="0 0 1200 118" role="img" aria-label="二十四节气年度位置示意图"><line x1="32" y1="58" x2="1168" y2="58" class="timeline-axis"></line><g class="timeline-ticks"><text x="32" y="28">春分 0°</text><text x="307" y="95">夏至 90°</text><text x="591" y="28">秋分 180°</text><text x="875" y="95">冬至 270°</text><text x="1120" y="28">翌春</text></g></svg></div></section>
+  <section id="knowledgeCards" class="knowledge-cards" aria-labelledby="knowledgeTitle"><div class="section-heading"><h2 id="knowledgeTitle">从图中学习</h2><p>先读现象，再回到两个视角验证原因。</p></div><div class="card-grid"><article><h3>地球公转</h3><p>地球绕太阳一周决定一年的季节循环；轨道位置不是昼夜的直接原因。</p></article><article><h3>地球自转</h3><p>地球自转让同一地点经历昼夜；观察者位置决定当地太阳高度。</p></article><article><h3>二十四节气</h3><p>节气以太阳在黄道上的视位置划分，每相隔 15° 一个节气。</p></article><article><h3>农历月份</h3><p>朔望月由月球相对太阳的位置变化定义，约为 29.53 天。</p></article><article><h3>月相与交点</h3><p>月相来自日、地、月的几何关系；月球轨道还相对黄道倾斜。</p></article><article><h3>干支纪年</h3><p>天干地支是纪年、纪月、纪日、纪时体系；它不是天体的空间轨道。</p></article></div></section>
+  <details id="advancedAstronomy" class="advanced-astronomy"><summary>进阶天文</summary><div class="advanced-content"><p>本页采用教学级近似：用于理解长期几何规律，不用于导航或精确日食、月食预报。</p><dl><dt>黄经</dt><dd>从春分点沿黄道量起的角度。</dd><dt>交点</dt><dd>月球轨道穿过黄道面的两个位置。</dd><dt>观察者</dt><dd>本地地平坐标随经纬度和时刻变化。</dd></dl></div></details>
+</main>
+<footer class="app-footer">离线版 · 深空主题 · 高对比教学视图</footer>
+<div id="pageStatus" role="status" aria-live="polite"><span id="appStatus"></span></div>
 <script src="./three.min.js"></script><script src="./OrbitControls.js"></script><script src="vendor/lunar/lunar.js"></script><script src="js/astronomy-core.js"></script><script src="js/calendar-core.js"></script><script src="js/observer-core.js"></script><script src="js/world-state.js"></script><script src="js/time-controller.js"></script><script src="js/scene-host.js"></script><script src="js/heliocentric-scene.js"></script><script src="js/geocentric-scene.js"></script><script src="js/app.js"></script>
 <script>document.addEventListener('DOMContentLoaded', function () { AstroEducation.App.start(); });</script>
 </body>

@@ -53,6 +53,20 @@ class OfflinePageControlsTest(unittest.TestCase):
         for marker in ('createJiaZiLines', 'simplifiedMoon', 'new THREE.WebGLRenderer', 'requestAnimationFrame(animate)', 'canvasContainer'):
             self.assertNotIn(marker, self.html)
 
+    def test_exposes_the_b1_learning_page_landmarks_and_controls(self):
+        required_ids = [
+            'timeControls', 'dateTimeInput', 'todayButton', 'previousDayButton',
+            'nextDayButton', 'playPauseButton', 'speedSelect', 'timeZoneSelect',
+            'locationSelect', 'latitudeInput', 'longitudeInput', 'sceneTabs',
+            'annualTimeline', 'knowledgeCards', 'advancedAstronomy', 'pageStatus'
+        ]
+        for element_id in required_ids:
+            self.assertEqual(self.html.count(f'id="{element_id}"'), 1)
+        self.assertIn('styles/astronomy-education.css', self.html)
+        self.assertIn('aria-live="polite"', self.html)
+        self.assertIn('<main', self.html)
+        self.assertIn('<details id="advancedAstronomy"', self.html)
+
 
 if __name__ == "__main__":
     unittest.main()
