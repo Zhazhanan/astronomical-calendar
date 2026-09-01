@@ -62,6 +62,51 @@ test('module keeps its public seam free of time and astronomy calculations', () 
   assert.doesNotMatch(source, /\bDate\b|\bAstronomy\b|\bCalendar\b/);
 });
 
+test('world-space lunar lighting is invariant when only the camera rotates', () => {
+  const normal = { x: 0, y: 0, z: 1 };
+  const light = { x: 0, y: 0, z: 1 };
+  assert.equal(Heliocentric.worldLightDot(normal, light), 1);
+  const cameraRotatedNormal = rotateY(normal, Math.PI / 2);
+  const cameraRotatedLight = rotateY(light, Math.PI / 2);
+  assert.equal(Heliocentric.worldLightDot(cameraRotatedNormal, cameraRotatedLight), 1);
+});
+
+test('Three rotation signs map canonical ecliptic longitude into the displayed orbit frame', () => {
+  const perihelion = 102.9 * Math.PI / 180;
+  const marker = rotateY({ x: 1, y: 0, z: 0 }, -perihelion);
+  assert.ok(Math.abs(marker.x - Math.cos(perihelion)) < 1e-12);
+  assert.ok(Math.abs(marker.z - Math.sin(perihelion)) < 1e-12);
+  const subsolarLongitude = 40;
+  const greenwichRotation = 80;
+  const observer = rotateY({ x: Math.cos(subsolarLongitude * Math.PI / 180), y: 0, z: Math.sin(subsolarLongitude * Math.PI / 180) }, -greenwichRotation * Math.PI / 180);
+  assert.ok(Math.abs(observer.x - Math.cos((subsolarLongitude + greenwichRotation) * Math.PI / 180)) < 1e-12);
+  assert.ok(Math.abs(observer.z - Math.sin((subsolarLongitude + greenwichRotation) * Math.PI / 180)) < 1e-12);
+});
+
+test('perihelion Earth and subsolar observer align with their rendered directions', () => {
+  const THREE = createFakeThree();
+  const scene = Heliocentric.create({ THREE, interactionElement: {} });
+  const perihelion = 102.9;
+  const sidereal = 80;
+  const rightAscension = 100;
+  const aligned = Object.assign({}, state, {
+    earth: Object.assign({}, state.earth, {
+      positionAu: { x: Math.cos(perihelion * Math.PI / 180), y: 0, z: Math.sin(perihelion * Math.PI / 180) },
+      axisUnit: { x: 0, y: 1, z: 0 }, perihelionLongitudeDeg: perihelion, rotationAngleDeg: sidereal
+    }),
+    sun: { vectorAu: { x: Math.cos(rightAscension * Math.PI / 180), y: 0, z: Math.sin(rightAscension * Math.PI / 180) } },
+    observer: { location: { latitudeDeg: 0, longitudeDeg: rightAscension - sidereal }, subsolarPoint: null }
+  });
+  scene.update(aligned);
+  const markerDirection = rotateY({ x: 1, y: 0, z: 0 }, scene.scene.userData.earthOrbitGroup.rotation.y);
+  assert.ok(Math.abs(markerDirection.x - aligned.earth.positionAu.x) < 1e-12);
+  assert.ok(Math.abs(markerDirection.z - aligned.earth.positionAu.z) < 1e-12);
+  const observerDirection = rotateY(scene.scene.userData.observerMarker.position, scene.scene.userData.earthSpinGroup.rotation.y);
+  assert.ok(Math.abs(observerDirection.x / Math.hypot(observerDirection.x, observerDirection.z) - aligned.sun.vectorAu.x) < 1e-12);
+  assert.ok(Math.abs(observerDirection.z / Math.hypot(observerDirection.x, observerDirection.z) - aligned.sun.vectorAu.z) < 1e-12);
+  scene.dispose();
+});
+
 test('create builds static teaching objects, updates in place, and releases resources once', () => {
   const THREE = createFakeThree();
   const interactionElement = {};
@@ -80,8 +125,9 @@ test('create builds static teaching objects, updates in place, and releases reso
   scene.update(state);
   assert.equal(scene.scene.userData.earthGroup.position, positionVector);
   assert.equal(scene.scene.userData.moon.position.x !== 0, true);
-  assert.equal(scene.scene.userData.earthSpinGroup.rotation.y, 123 * Math.PI / 180);
-  assert.match(scene.scene.userData.moon.material.fragmentShader, /lightDirection/);
+  assert.equal(scene.scene.userData.earthSpinGroup.rotation.y, -123 * Math.PI / 180);
+  assert.match(scene.scene.userData.moon.material.vertexShader, /worldNormal=normalize\(mat3\(modelMatrix\)\*normal\)/);
+  assert.match(scene.scene.userData.moon.material.fragmentShader, /dot\(normalize\(worldNormal\),normalize\(lightDirection\)\)/);
   const lightDirection = scene.scene.userData.moon.material.uniforms.lightDirection.value;
   assert.ok(Math.abs(lightDirection.x + 0.5 / Math.hypot(0.5, 0, 0.8)) < 1e-12);
   assert.equal(labels.some((label) => /^近地点/.test(label.textContent)), true);
@@ -95,6 +141,12 @@ test('create builds static teaching objects, updates in place, and releases reso
   const changedSun = Object.assign({}, state, { sun: Object.freeze({ vectorAu: Object.freeze({ x: 1, y: 0, z: 0 }) }) });
   scene.update(changedSun);
   assert.equal(lightDirection.x, 1);
+  const vectorsBeforeOrbitUpdate = THREE.vectorCreations;
+  const changedOrbit = Object.assign({}, changedSun, {
+    moon: Object.assign({}, state.moon, { ascendingNodeLongitudeDeg: 126 })
+  });
+  scene.update(changedOrbit);
+  assert.equal(THREE.vectorCreations, vectorsBeforeOrbitUpdate);
   scene.dispose();
   scene.dispose();
   assert.equal(THREE.controlsDisposed, 1);
@@ -103,10 +155,43 @@ test('create builds static teaching objects, updates in place, and releases reso
   assert.equal(THREE.disposedTextures, 1);
 });
 
+test('procedural glow texture receives a local 64px radial canvas', () => {
+  const priorDocument = global.document;
+  const calls = [];
+  global.document = {
+    createElement: (name) => name === 'canvas' ? {
+      getContext: () => ({
+        createRadialGradient: () => ({ addColorStop: () => calls.push('stop') }),
+        fillRect: () => calls.push('fill')
+      })
+    } : { style: {} }
+  };
+  try {
+    const THREE = createFakeThree();
+    const scene = Heliocentric.create({ THREE, interactionElement: {} });
+    const glow = scene.scene.children[0].children.find((entry) => entry instanceof THREE.Sprite);
+    assert.equal(glow.material.map.canvas.width, 64);
+    assert.equal(glow.material.map.canvas.height, 64);
+    assert.equal(calls.filter((call) => call === 'stop').length, 3);
+    assert.equal(calls.includes('fill'), true);
+    scene.dispose();
+  } finally {
+    global.document = priorDocument;
+  }
+});
+
+function rotateY(vector, radians) {
+  return {
+    x: Math.cos(radians) * vector.x + Math.sin(radians) * vector.z,
+    y: vector.y,
+    z: -Math.sin(radians) * vector.x + Math.cos(radians) * vector.z
+  };
+}
+
 function createFakeThree() {
-  const stats = { disposedGeometries: 0, disposedMaterials: 0, disposedTextures: 0, controlsDisposed: 0 };
+  const stats = { disposedGeometries: 0, disposedMaterials: 0, disposedTextures: 0, controlsDisposed: 0, vectorCreations: 0 };
   class Vector3 {
-    constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
+    constructor(x = 0, y = 0, z = 0) { stats.vectorCreations += 1; this.set(x, y, z); }
     set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
     copy(vector) { return this.set(vector.x, vector.y, vector.z); }
     normalize() { const length = Math.hypot(this.x, this.y, this.z) || 1; return this.set(this.x / length, this.y / length, this.z / length); }
@@ -127,7 +212,7 @@ function createFakeThree() {
   class Texture { dispose() { stats.disposedTextures += 1; } }
   class Mesh extends Object3D { constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; } }
   class Line extends Mesh {}
-  class Sprite extends Mesh {}
+  class Sprite extends Object3D { constructor(material) { super(); this.material = material; } }
   class SpriteMaterial extends Material {}
   class ShaderMaterial extends Material { constructor(options) { super(options); this.uniforms = options.uniforms; this.vertexShader = options.vertexShader; this.fragmentShader = options.fragmentShader; } }
   class CanvasTexture extends Texture { constructor(canvas) { super(); this.canvas = canvas; } }
