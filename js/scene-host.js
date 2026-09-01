@@ -18,6 +18,13 @@
     return SCENE_IDS.indexOf(selectedScene) >= 0 ? selectedScene : SCENE_IDS[0];
   }
 
+  function layoutModeForWidth(width) {
+    const safeWidth = safeDimension(width);
+    if (safeWidth <= 600) return 'mobile';
+    if (safeWidth <= 1024) return 'tablet';
+    return 'desktop';
+  }
+
   function computeViewports(width, height, layoutMode, selectedScene) {
     const safeWidth = safeDimension(width);
     const safeHeight = safeDimension(height);
@@ -60,16 +67,18 @@
     const scaleX = canvasWidth / cssWidth;
     const scaleY = canvasHeight / cssHeight;
     const left = (containerRect.left - canvasRect.left) * scaleX;
+    const right = (containerRect.left + containerRect.width - canvasRect.left) * scaleX;
     const top = (containerRect.top - canvasRect.top) * scaleY;
-    const width = containerRect.width * scaleX;
-    const height = containerRect.height * scaleY;
+    const bottom = (containerRect.top + containerRect.height - canvasRect.top) * scaleY;
     const x = clamp(Math.round(left), 0, canvasWidth);
-    const y = clamp(Math.round(canvasHeight - top - height), 0, canvasHeight);
+    const rightEdge = clamp(Math.round(right), 0, canvasWidth);
+    const y = clamp(Math.round(canvasHeight - bottom), 0, canvasHeight);
+    const topEdge = clamp(Math.round(canvasHeight - top), 0, canvasHeight);
     return {
       x: x,
       y: y,
-      width: clamp(Math.round(width), 0, canvasWidth - x),
-      height: clamp(Math.round(height), 0, canvasHeight - y)
+      width: Math.max(0, rightEdge - x),
+      height: Math.max(0, topEdge - y)
     };
   }
 
@@ -119,8 +128,10 @@
     const scenes = config.scenes || {};
     let layoutMode = LAYOUTS.indexOf(config.layoutMode) >= 0 ? config.layoutMode : 'desktop';
     let currentSelected = selectedId(config.selectedScene);
-    let paused = false;
+    let running = false;
     let disposed = false;
+    let contextLostState = false;
+    let wasRunningBeforeLoss = false;
     let frameRequest = null;
     let lastState = null;
     let resizeObserver = null;
@@ -129,6 +140,7 @@
     SCENE_IDS.forEach(function(id) {
       const scene = scenes[id];
       const interaction = scene && (scene.interactionElement || (containers[id] && containers[id].querySelector && containers[id].querySelector('.scene-interaction')));
+      if (scene && interaction) scene.interactionElement = interaction;
       if (scene && interaction && typeof scene.createControls === 'function') {
         scene.controls = scene.createControls(interaction);
       }
@@ -158,12 +170,27 @@
     }
 
     function applyLayout(viewports) {
+      syncSceneGrid();
       viewports.forEach(function(viewport) {
         const container = containers[viewport.id];
         if (container && container.style) {
           container.style.display = viewport.visible ? '' : 'none';
         }
+        if (container && typeof container.setAttribute === 'function') container.setAttribute('aria-hidden', String(!viewport.visible));
+        const scene = scenes[viewport.id];
+        const interaction = scene && scene.interactionElement;
+        if (interaction && interaction.style) interaction.style.pointerEvents = viewport.visible ? '' : 'none';
       });
+    }
+
+    function syncSceneGrid() {
+      const grid = config.sceneGrid || findSceneGrid(containers);
+      if (!grid) return;
+      if (grid.dataset) grid.dataset.layout = layoutMode;
+      if (grid.classList) {
+        LAYOUTS.forEach(function(layout) { grid.classList.remove('scene-layout-' + layout); });
+        grid.classList.add('scene-layout-' + layoutMode);
+      }
     }
 
     function measuredViewport(id) {
@@ -176,7 +203,7 @@
     }
 
     function renderFrame(worldState) {
-      if (disposed || paused) return;
+      if (disposed || contextLostState) return;
       lastState = worldState || lastState;
       getLayout().filter(function(viewport) { return viewport.visible; }).forEach(function(viewport) {
         const scene = scenes[viewport.id];
@@ -197,7 +224,7 @@
     }
 
     function requestNextFrame() {
-      if (disposed || paused || !hostWindow || typeof hostWindow.requestAnimationFrame !== 'function') return;
+      if (disposed || !running || contextLostState || frameRequest !== null || !hostWindow || typeof hostWindow.requestAnimationFrame !== 'function') return;
       frameRequest = hostWindow.requestAnimationFrame(function() {
         frameRequest = null;
         renderFrame(lastState);
@@ -206,14 +233,14 @@
     }
 
     function pause() {
-      paused = true;
+      running = false;
       if (frameRequest !== null && hostWindow && typeof hostWindow.cancelAnimationFrame === 'function') hostWindow.cancelAnimationFrame(frameRequest);
       frameRequest = null;
     }
 
     function resume() {
-      if (disposed) return;
-      paused = false;
+      if (disposed || contextLostState || running) return;
+      running = true;
       requestNextFrame();
     }
 
@@ -227,8 +254,8 @@
 
     function dispose() {
       if (disposed) return;
-      disposed = true;
       pause();
+      disposed = true;
       if (resizeObserver && typeof resizeObserver.disconnect === 'function') resizeObserver.disconnect();
       listeners.splice(0).forEach(function(listener) { listener[0].removeEventListener(listener[1], listener[2]); });
       SCENE_IDS.forEach(function(id) {
@@ -241,14 +268,20 @@
 
     function contextLost(event) {
       if (event && typeof event.preventDefault === 'function') event.preventDefault();
+      if (contextLostState || disposed) return;
+      wasRunningBeforeLoss = running;
+      contextLostState = true;
       pause();
       if (typeof config.onContextChange === 'function') config.onContextChange({ type: 'lost' });
     }
 
     function contextRestored() {
+      if (!contextLostState || disposed) return;
+      contextLostState = false;
       rebuild();
       if (typeof config.onContextChange === 'function') config.onContextChange({ type: 'restored' });
-      resume();
+      if (wasRunningBeforeLoss) resume();
+      wasRunningBeforeLoss = false;
     }
 
     addListener(hostWindow, 'resize', resize);
@@ -281,10 +314,16 @@
     };
   }
 
+  function findSceneGrid(containers) {
+    const first = containers && containers[SCENE_IDS[0]];
+    return first && first.parentElement ? first.parentElement : null;
+  }
+
   function unavailable() { return { available: false, reason: 'WEBGL_UNAVAILABLE' }; }
 
   return Object.freeze({
     computeViewports: computeViewports,
+    layoutModeForWidth: layoutModeForWidth,
     cappedPixelRatio: cappedPixelRatio,
     containerRectToScissor: containerRectToScissor,
     create: create,
