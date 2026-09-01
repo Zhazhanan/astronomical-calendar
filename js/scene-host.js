@@ -125,7 +125,7 @@
 
     const hostWindow = config.window || (typeof window !== 'undefined' ? window : null);
     const containers = config.containers || {};
-    const scenes = config.scenes || {};
+    let scenes = config.scenes || {};
     let layoutMode = LAYOUTS.indexOf(config.layoutMode) >= 0 ? config.layoutMode : 'desktop';
     let currentSelected = selectedId(config.selectedScene);
     let running = false;
@@ -137,14 +137,24 @@
     let resizeObserver = null;
     const listeners = [];
 
-    SCENE_IDS.forEach(function(id) {
+    function prepareScenes() { SCENE_IDS.forEach(function(id) {
       const scene = scenes[id];
       const interaction = scene && (scene.interactionElement || (containers[id] && containers[id].querySelector && containers[id].querySelector('.scene-interaction')));
       if (scene && interaction) scene.interactionElement = interaction;
-      if (scene && interaction && typeof scene.createControls === 'function') {
+      if (scene && interaction && !scene.controls && typeof scene.createControls === 'function') {
         scene.controls = scene.createControls(interaction);
       }
-    });
+    }); }
+
+    function disposeScenes(sceneSet) {
+      SCENE_IDS.forEach(function(id) {
+        const scene = sceneSet[id];
+        if (scene && typeof scene.dispose === 'function') scene.dispose();
+        else if (scene && scene.controls && typeof scene.controls.dispose === 'function') scene.controls.dispose();
+      });
+    }
+
+    prepareScenes();
 
     function addListener(target, eventName, handler) {
       if (!target || typeof target.addEventListener !== 'function') return;
@@ -246,10 +256,18 @@
 
     function rebuild() {
       if (disposed) return;
-      SCENE_IDS.forEach(function(id) {
+      if (typeof config.rebuildScenes === 'function') {
+        const staleScenes = scenes;
+        disposeScenes(staleScenes);
+        const rebuiltScenes = config.rebuildScenes();
+        if (rebuiltScenes) scenes = rebuiltScenes;
+        prepareScenes();
+        if (typeof config.onScenesRebuilt === 'function') config.onScenesRebuilt(scenes);
+      } else SCENE_IDS.forEach(function(id) {
         if (scenes[id] && typeof scenes[id].rebuild === 'function') scenes[id].rebuild();
       });
       resize();
+      if (lastState) renderFrame(lastState);
     }
 
     function dispose() {
@@ -258,11 +276,7 @@
       disposed = true;
       if (resizeObserver && typeof resizeObserver.disconnect === 'function') resizeObserver.disconnect();
       listeners.splice(0).forEach(function(listener) { listener[0].removeEventListener(listener[1], listener[2]); });
-      SCENE_IDS.forEach(function(id) {
-        const scene = scenes[id];
-        if (scene && typeof scene.dispose === 'function') scene.dispose();
-        else if (scene && scene.controls && typeof scene.controls.dispose === 'function') scene.controls.dispose();
-      });
+      disposeScenes(scenes);
       if (renderer && typeof renderer.dispose === 'function') renderer.dispose();
     }
 

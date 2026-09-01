@@ -220,6 +220,41 @@ test('resume is idempotent and context restoration resumes only a host that was 
   host.dispose();
 });
 
+test('context restoration discards stale scenes, rebuilds once, and reapplies the last state', () => {
+  const environment = productionFakes();
+  let staleDisposals = 0;
+  let rebuilds = 0;
+  const renders = [];
+  const oldScenes = {
+    heliocentric: { dispose() { staleDisposals += 1; } },
+    geocentric: { dispose() { staleDisposals += 1; } }
+  };
+  const host = SceneHost.create({
+    canvas: environment.canvas,
+    containers: environment.containers,
+    THREE: environment.THREE,
+    scenes: oldScenes,
+    rebuildScenes() {
+      rebuilds += 1;
+      return {
+        heliocentric: { render(_renderer, state) { renders.push(['heliocentric', state]); } },
+        geocentric: { render(_renderer, state) { renders.push(['geocentric', state]); } }
+      };
+    },
+    window: environment.window
+  });
+  const state = Object.freeze({ instantUtc: 42 });
+  host.renderFrame(state);
+  environment.canvas.listeners.get('webglcontextlost')({ preventDefault() {} });
+  host.renderFrame(Object.freeze({ instantUtc: 99 }));
+  environment.canvas.listeners.get('webglcontextrestored')();
+  environment.canvas.listeners.get('webglcontextrestored')();
+  assert.equal(staleDisposals, 2);
+  assert.equal(rebuilds, 1);
+  assert.deepEqual(renders, [['heliocentric', state], ['geocentric', state]]);
+  host.dispose();
+});
+
 function fakeElement(rect, interaction) {
   const listeners = new Map();
   const classes = new Set();

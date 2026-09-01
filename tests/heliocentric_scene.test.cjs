@@ -180,6 +180,17 @@ test('procedural glow texture receives a local 64px radial canvas', () => {
   }
 });
 
+test('resetView restores the heliocentric teaching camera and its control target', () => {
+  const THREE = createFakeThree();
+  const scene = Heliocentric.create({ THREE, interactionElement: {} });
+  scene.camera.position.set(9, 8, 7);
+  scene.controls.target = new THREE.Vector3(3, 2, 1);
+  scene.resetView();
+  assert.deepEqual({ x: scene.camera.position.x, y: scene.camera.position.y, z: scene.camera.position.z }, { x: 0, y: 38, z: 68 });
+  assert.deepEqual({ x: scene.controls.target.x, y: scene.controls.target.y, z: scene.controls.target.z }, { x: 0, y: 0, z: 0 });
+  scene.dispose();
+});
+
 function rotateY(vector, radians) {
   return {
     x: Math.cos(radians) * vector.x + Math.sin(radians) * vector.z,

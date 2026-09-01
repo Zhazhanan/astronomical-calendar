@@ -103,6 +103,15 @@ test('same state no-op and hot updates make no vectors or plain coordinate objec
 test('module public seam has no clock or calculation dependencies', () => {
   const source = require('node:fs').readFileSync(require.resolve('../js/geocentric-scene.js'), 'utf8'); assert.doesNotMatch(source, /\bDate\b|\bAstronomy\b|\bCalendar\b/);
 });
+test('resetView restores the geocentric teaching camera and its control target', () => {
+  const THREE = createFakeThree(), scene = Geocentric.create({ THREE, interactionElement: {}, solarTermNames: names() });
+  scene.camera.position.set(9, 8, 7);
+  scene.controls.target = new THREE.Vector3(3, 2, 1);
+  scene.resetView();
+  assert.deepEqual({ x: scene.camera.position.x, y: scene.camera.position.y, z: scene.camera.position.z }, { x: 0, y: 31, z: 53 });
+  assert.deepEqual({ x: scene.controls.target.x, y: scene.controls.target.y, z: scene.controls.target.z }, { x: 0, y: 0, z: 0 });
+  scene.dispose();
+});
 
 function names() { return Array.from({ length: 24 }, (_, index) => '节气' + index); }
 function labelLayer(items) { return { appendChild(label) { items.push(label); } }; }
