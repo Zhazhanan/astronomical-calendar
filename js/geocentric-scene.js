@@ -8,120 +8,72 @@
   const DISPLAY = Object.freeze({ sphereRadius: 24, earthRadius: 2.1, sunRadius: 1.15, moonRadius: 0.75, obliquityDeg: 23.43928, solarArcSegments: 64, longitudeThresholdDeg: 0.05 });
   const REQUIRED_STATE_ERROR = 'worldState must provide sun longitude/vector and moon longitude/latitude state';
   const DEGREE = Math.PI / 180;
-
+  let coordinateAllocations = 0;
   function normalDegrees(value) { return ((value % 360) + 360) % 360; }
+  function angularDistance(a, b) { const delta = Math.abs(normalDegrees(a) - normalDegrees(b)); return Math.min(delta, 360 - delta); }
   function finite(value) { return Number.isFinite(value); }
-  function validState(state) {
-    return state && state.sun && state.moon && finite(state.sun.longitudeDeg) && state.sun.vectorAu &&
-      finite(state.sun.vectorAu.x) && finite(state.sun.vectorAu.y) && finite(state.sun.vectorAu.z) &&
-      finite(state.moon.longitudeDeg) && finite(state.moon.latitudeDeg) && finite(state.moon.nodeDistanceDeg) && finite(state.moon.illumination);
-  }
+  function validState(state) { return state && state.sun && state.moon && finite(state.sun.longitudeDeg) && state.sun.vectorAu && finite(state.sun.vectorAu.x) && finite(state.sun.vectorAu.y) && finite(state.sun.vectorAu.z) && finite(state.moon.longitudeDeg) && finite(state.moon.latitudeDeg) && finite(state.moon.nodeDistanceDeg) && finite(state.moon.illumination) && finite(state.moon.elongationDeg) && typeof state.moon.phaseName === 'string' && typeof state.moon.waxing === 'boolean'; }
   function termsFor(state) { return (state.sun && state.sun.solarTerms) || state.solarTerms || {}; }
-  function frozenMoon(moon) { return Object.freeze({ longitudeDeg: moon.longitudeDeg, latitudeDeg: moon.latitudeDeg, nodeDistanceDeg: moon.nodeDistanceDeg, illumination: moon.illumination, eclipseSeason: moon.eclipseSeasonHint || null }); }
-  function toVisualModel(state) {
-    if (!validState(state)) throw new TypeError(REQUIRED_STATE_ERROR);
-    const terms = termsFor(state);
-    return Object.freeze({
-      springZeroDeg: 0,
-      solarLongitudeDeg: normalDegrees(state.sun.longitudeDeg),
-      solarTermName: terms.current && terms.current.name || '—',
-      nextSolarTermName: terms.next && terms.next.name || '—',
-      angleArc: Object.freeze({ startDeg: 0, endDeg: normalDegrees(state.sun.longitudeDeg) }),
-      sun: Object.freeze({ vectorAu: Object.freeze({ x: state.sun.vectorAu.x, y: state.sun.vectorAu.y, z: state.sun.vectorAu.z }) }),
-      moon: frozenMoon(state.moon)
-    });
-  }
-  function lonLatToVector(longitudeDeg, latitudeDeg, radius) {
-    const longitude = normalDegrees(longitudeDeg) * DEGREE;
-    const latitude = latitudeDeg * DEGREE;
-    const horizontal = radius * Math.cos(latitude);
-    return { x: horizontal * Math.cos(longitude), y: radius * Math.sin(latitude), z: horizontal * Math.sin(longitude) };
-  }
+  function frozenMoon(moon) { return Object.freeze({ longitudeDeg: moon.longitudeDeg, latitudeDeg: moon.latitudeDeg, nodeDistanceDeg: moon.nodeDistanceDeg, illumination: moon.illumination, phaseName: moon.phaseName, elongationDeg: moon.elongationDeg, waxing: moon.waxing, eclipseSeason: moon.eclipseSeasonHint || null }); }
+  function toVisualModel(state) { if (!validState(state)) throw new TypeError(REQUIRED_STATE_ERROR); const terms = termsFor(state); return Object.freeze({ springZeroDeg: 0, solarLongitudeDeg: normalDegrees(state.sun.longitudeDeg), solarTermName: terms.current && terms.current.name || '—', nextSolarTermName: terms.next && terms.next.name || '—', angleArc: Object.freeze({ startDeg: 0, endDeg: normalDegrees(state.sun.longitudeDeg) }), sun: Object.freeze({ vectorAu: Object.freeze({ x: state.sun.vectorAu.x, y: state.sun.vectorAu.y, z: state.sun.vectorAu.z }) }), moon: frozenMoon(state.moon) }); }
+  function lonLatToVector(longitudeDeg, latitudeDeg, radius) { coordinateAllocations++; const longitude = normalDegrees(longitudeDeg) * DEGREE, latitude = latitudeDeg * DEGREE, horizontal = radius * Math.cos(latitude); return { x: horizontal * Math.cos(longitude), y: radius * Math.sin(latitude), z: horizontal * Math.sin(longitude) }; }
+  function debugCoordinateAllocations() { return coordinateAllocations; }
+  function tiltedEquatorCoordinates(radius, segments) { const result = []; const cos = Math.cos(DISPLAY.obliquityDeg * DEGREE), sin = Math.sin(DISPLAY.obliquityDeg * DEGREE); for (let index = 0; index <= segments; index++) { const longitude = index * 360 / segments * DEGREE, x = radius * Math.cos(longitude), z = radius * Math.sin(longitude); result.push({ x: x, y: -z * sin, z: z * cos }); } return result; }
   function create(options) {
     const config = options || {}, THREE = config.THREE;
     if (!THREE || typeof THREE.Scene !== 'function' || typeof THREE.Vector3 !== 'function') throw new TypeError('THREE must provide Scene and Vector3');
-    const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(45, 1, 0.1, 140), root = new THREE.Group(), resources = [], labels = createLabels(config.labelLayer);
+    const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(45, 1, 0.1, 140), root = new THREE.Group(), resources = [], labelRecords = [];
     const controls = typeof THREE.OrbitControls === 'function' ? new THREE.OrbitControls(camera, config.interactionElement) : null;
-    if (camera.position && camera.position.set) camera.position.set(0, 31, 53);
-    if (camera.lookAt) camera.lookAt(0, 0, 0);
-    scene.add(root);
-
+    if (camera.position && camera.position.set) camera.position.set(0, 31, 53); if (camera.lookAt) camera.lookAt(0, 0, 0); scene.add(root);
     const earth = mesh(THREE, new THREE.SphereGeometry(DISPLAY.earthRadius, 24, 16), new THREE.MeshBasicMaterial({ color: 0x2775c6 }), resources);
-    const ecliptic = staticLine(THREE, circlePoints(THREE, DISPLAY.sphereRadius, 96), 0xfacc15, resources);
-    const equator = staticLine(THREE, tiltedEquatorPoints(THREE), 0x22d3ee, resources);
-    equator.userData.dashed = true;
-    const axes = new THREE.Group();
-    axes.add(staticLine(THREE, [v(THREE, -5, 0, 0), v(THREE, 5, 0, 0)], 0xf8fafc, resources), staticLine(THREE, [v(THREE, 0, -5, 0), v(THREE, 0, 5, 0)], 0xf8fafc, resources), staticLine(THREE, [v(THREE, 0, 0, -5), v(THREE, 0, 0, 5)], 0xf8fafc, resources));
-    const springRay = staticLine(THREE, [v(THREE, 0, 0, 0), v(THREE, DISPLAY.sphereRadius + 3, 0, 0)], 0xf8fafc, resources);
-    springRay.userData.springZeroDeg = 0;
-    const termTicks = new THREE.Group();
-    for (let index = 0; index < 24; index++) {
-      const inner = lonLatToVector(index * 15, 0, DISPLAY.sphereRadius - 0.8);
-      const outer = lonLatToVector(index * 15, 0, DISPLAY.sphereRadius + 0.8);
-      termTicks.add(staticLine(THREE, [v(THREE, inner.x, inner.y, inner.z), v(THREE, outer.x, outer.y, outer.z)], 0xfde68a, resources));
-    }
-    const solarArc = dynamicLine(THREE, makeArcGeometry(THREE), 0xfde047, resources);
-    const sun = mesh(THREE, new THREE.SphereGeometry(DISPLAY.sunRadius, 18, 12), new THREE.MeshBasicMaterial({ color: 0xfbbf24 }), resources);
-    const earthSunRay = staticLine(THREE, [v(THREE, 0, 0, 0), v(THREE, 0, 0, 0)], 0xfbbf24, resources);
-    const moon = mesh(THREE, new THREE.SphereGeometry(DISPLAY.moonRadius, 18, 12), new THREE.MeshBasicMaterial({ color: 0xcbd5e1 }), resources);
-    const moonProjection = staticLine(THREE, [v(THREE, 0, 0, 0), v(THREE, 0, 0, 0)], 0xa78bfa, resources);
-    const latitudeArc = dynamicLine(THREE, makeArcGeometry(THREE), 0x8b5cf6, resources);
-    const phaseIndicator = mesh(THREE, new THREE.RingGeometry(0.15, 0.48, 18), new THREE.MeshBasicMaterial({ color: 0xe2e8f0 }), resources);
+    const ecliptic = staticLine(THREE, circlePoints(THREE, DISPLAY.sphereRadius, 96), new THREE.LineBasicMaterial({ color: 0xfacc15 }), resources);
+    const equatorGeometry = new THREE.BufferGeometry().setFromPoints(tiltedEquatorCoordinates(DISPLAY.sphereRadius, 96).map(function (p) { return new THREE.Vector3(p.x, p.y, p.z); }));
+    const equatorMaterial = new THREE.LineDashedMaterial({ color: 0x22d3ee, dashSize: 1, gapSize: 0.65 }); resources.push(equatorGeometry, equatorMaterial); if (equatorGeometry.computeLineDistances) equatorGeometry.computeLineDistances(); const equator = new THREE.Line(equatorGeometry, equatorMaterial);
+    const axes = new THREE.Group(); axes.add(staticLine(THREE, [vector(THREE, -5, 0, 0), vector(THREE, 5, 0, 0)], new THREE.LineBasicMaterial({ color: 0xf8fafc }), resources), staticLine(THREE, [vector(THREE, 0, -5, 0), vector(THREE, 0, 5, 0)], new THREE.LineBasicMaterial({ color: 0xf8fafc }), resources), staticLine(THREE, [vector(THREE, 0, 0, -5), vector(THREE, 0, 0, 5)], new THREE.LineBasicMaterial({ color: 0xf8fafc }), resources));
+    const springRay = staticLine(THREE, [vector(THREE, 0, 0, 0), vector(THREE, DISPLAY.sphereRadius + 3, 0, 0)], new THREE.LineBasicMaterial({ color: 0xf8fafc }), resources); springRay.userData.springZeroDeg = 0;
+    const termTicks = new THREE.Group(); for (let index = 0; index < 24; index++) { const inner = new THREE.Vector3(), outer = new THREE.Vector3(); setVectorFromLonLat(inner, index * 15, 0, DISPLAY.sphereRadius - 0.8); setVectorFromLonLat(outer, index * 15, 0, DISPLAY.sphereRadius + 0.8); termTicks.add(staticLine(THREE, [inner, outer], new THREE.LineBasicMaterial({ color: 0xfde68a }), resources)); }
+    const solarArc = dynamicLine(THREE, makeArcGeometry(THREE), 0xfde047, resources), sun = mesh(THREE, new THREE.SphereGeometry(DISPLAY.sunRadius, 18, 12), new THREE.MeshBasicMaterial({ color: 0xfbbf24 }), resources), earthSunRay = staticLine(THREE, [vector(THREE, 0, 0, 0), vector(THREE, 0, 0, 0)], new THREE.LineBasicMaterial({ color: 0xfbbf24 }), resources);
+    const moon = mesh(THREE, new THREE.SphereGeometry(DISPLAY.moonRadius, 18, 12), new THREE.MeshBasicMaterial({ color: 0xcbd5e1 }), resources), moonProjection = staticLine(THREE, [vector(THREE, 0, 0, 0), vector(THREE, 0, 0, 0)], new THREE.LineBasicMaterial({ color: 0xa78bfa }), resources), latitudeArc = dynamicLine(THREE, makeArcGeometry(THREE), 0x8b5cf6, resources), phaseIndicator = mesh(THREE, new THREE.RingGeometry(0.15, 0.48, 18), new THREE.MeshBasicMaterial({ color: 0xe2e8f0 }), resources);
     root.add(earth, ecliptic, equator, axes, springRay, termTicks, solarArc, sun, earthSunRay, moon, moonProjection, latitudeArc, phaseIndicator);
-    addStaticLabels(labels, config.labelLayer, config.solarTermNames || []);
-
-    const sunPosition = new THREE.Vector3(), moonPosition = new THREE.Vector3(), projectionPosition = new THREE.Vector3();
-    let lastState = null, lastLongitude = NaN, disposed = false;
+    const labels = buildLabels(THREE, config.labelLayer, config.solarTermNames || [], labelRecords);
+    const sunPosition = new THREE.Vector3(), moonPosition = new THREE.Vector3(), projectionPosition = new THREE.Vector3(), lambdaPosition = new THREE.Vector3(), projected = new THREE.Vector3();
+    let lastState = null, lastSolarLongitude = NaN, lastMoonLongitude = NaN, lastMoonLatitude = NaN, disposed = false;
     function update(state) {
       if (disposed || state === lastState) return;
-      if (!validState(state)) throw new TypeError(REQUIRED_STATE_ERROR);
-      lastState = state;
-      const longitude = normalDegrees(state.sun.longitudeDeg);
-      setVectorFromLonLat(sunPosition, longitude, 0, DISPLAY.sphereRadius);
-      sun.position.copy(sunPosition);
-      setLineEndpoint(earthSunRay.geometry, sunPosition);
-      if (!finite(lastLongitude) || Math.abs(longitude - lastLongitude) + 1e-9 >= DISPLAY.longitudeThresholdDeg) {
-        writeLongitudeArc(solarArc.geometry, longitude, 0, DISPLAY.sphereRadius * 0.55);
-        lastLongitude = longitude;
-      }
-      setVectorFromLonLat(moonPosition, state.moon.longitudeDeg, state.moon.latitudeDeg, DISPLAY.sphereRadius);
-      setVectorFromLonLat(projectionPosition, state.moon.longitudeDeg, 0, DISPLAY.sphereRadius);
-      moon.position.copy(moonPosition);
-      phaseIndicator.position.copy(moonPosition);
-      if (phaseIndicator.scale && phaseIndicator.scale.set) phaseIndicator.scale.set(0.5 + state.moon.illumination, 0.5 + state.moon.illumination, 1);
-      setLineEndpoint(moonProjection.geometry, projectionPosition);
-      writeLatitudeArc(latitudeArc.geometry, state.moon.longitudeDeg, state.moon.latitudeDeg, DISPLAY.sphereRadius * 0.84);
-      updateDynamicLabels(labels, state);
+      if (!validState(state)) throw new TypeError(REQUIRED_STATE_ERROR); lastState = state;
+      const solarLongitude = normalDegrees(state.sun.longitudeDeg);
+      setVectorFromLonLat(sunPosition, solarLongitude, 0, DISPLAY.sphereRadius); sun.position.copy(sunPosition); setLineEndpoint(earthSunRay.geometry, sunPosition);
+      setVectorFromLonLat(lambdaPosition, solarLongitude / 2, 0, DISPLAY.sphereRadius * 0.62); labels.lambda.anchor.copy(lambdaPosition);
+      if (!finite(lastSolarLongitude) || angularDistance(solarLongitude, lastSolarLongitude) + 1e-9 >= DISPLAY.longitudeThresholdDeg) { writeLongitudeArc(solarArc.geometry, solarLongitude, 0, DISPLAY.sphereRadius * 0.55); lastSolarLongitude = solarLongitude; }
+      setVectorFromLonLat(moonPosition, state.moon.longitudeDeg, state.moon.latitudeDeg, DISPLAY.sphereRadius); setVectorFromLonLat(projectionPosition, state.moon.longitudeDeg, 0, DISPLAY.sphereRadius); moon.position.copy(moonPosition); phaseIndicator.position.copy(moonPosition); moonProjection.position && moonProjection.position.set(0, 0, 0); setLineEndpoint(moonProjection.geometry, projectionPosition);
+      const phaseScale = 0.5 + state.moon.illumination; if (phaseIndicator.scale && phaseIndicator.scale.set) phaseIndicator.scale.set(state.moon.waxing ? phaseScale : -phaseScale, phaseScale, 1);
+      labels.sun.anchor.copy(sunPosition); labels.moon.anchor.copy(moonPosition); labels.projection.anchor.copy(projectionPosition); labels.node.anchor.copy(projectionPosition); labels.phase.anchor.copy(moonPosition);
+      if (!finite(lastMoonLongitude) || angularDistance(state.moon.longitudeDeg, lastMoonLongitude) + 1e-9 >= DISPLAY.longitudeThresholdDeg || Math.abs(state.moon.latitudeDeg - lastMoonLatitude) + 1e-9 >= DISPLAY.longitudeThresholdDeg) { writeLatitudeArc(latitudeArc.geometry, state.moon.longitudeDeg, state.moon.latitudeDeg, DISPLAY.sphereRadius * 0.84); lastMoonLongitude = normalDegrees(state.moon.longitudeDeg); lastMoonLatitude = state.moon.latitudeDeg; }
+      updateDynamicLabels(labels, state, solarLongitude);
     }
-    function setLabelsVisible(visible) { labels.forEach(function (label) { if (label.style) label.style.display = visible ? '' : 'none'; }); }
-    function dispose() {
-      if (disposed) return;
-      disposed = true;
-      if (controls && typeof controls.dispose === 'function') controls.dispose();
-      resources.forEach(disposeResource);
-      labels.forEach(function (label) { if (label.parentNode && label.parentNode.removeChild) label.parentNode.removeChild(label); });
-    }
-    scene.userData = scene.userData || {};
-    Object.assign(scene.userData, { root, earth, ecliptic, equator, springRay, termTicks, solarArc, sun, earthSunRay, moon, moonProjection, latitudeArc, phaseIndicator });
-    return { scene, camera, controls, interactionElement: config.interactionElement, update, setLabelsVisible, dispose };
+    function updateLabelPositions() { labelRecords.forEach(function (record) { projected.copy(record.anchor); if (projected.project) projected.project(camera); record.element.style.left = ((projected.x + 1) * 50).toFixed(2) + '%'; record.element.style.top = ((1 - projected.y) * 50).toFixed(2) + '%'; }); }
+    function render() { updateLabelPositions(); }
+    function setLabelsVisible(visible) { labelRecords.forEach(function (record) { record.element.style.display = visible ? '' : 'none'; }); }
+    function dispose() { if (disposed) return; disposed = true; if (controls && controls.dispose) controls.dispose(); resources.forEach(disposeResource); labelRecords.forEach(function (record) { if (record.element.parentNode && record.element.parentNode.removeChild) record.element.parentNode.removeChild(record.element); }); }
+    scene.userData = scene.userData || {}; Object.assign(scene.userData, { root, earth, ecliptic, equator, springRay, termTicks, solarArc, sun, earthSunRay, moon, moonProjection, latitudeArc, phaseIndicator, labels, labelProjection: projected });
+    return { scene, camera, controls, interactionElement: config.interactionElement, update, render, updateLabelPositions, setLabelsVisible, dispose };
   }
-  function v(THREE, x, y, z) { return new THREE.Vector3(x, y, z); }
+  function vector(THREE, x, y, z) { return new THREE.Vector3(x, y, z); }
   function mesh(THREE, geometry, material, resources) { resources.push(geometry, material); return new THREE.Mesh(geometry, material); }
-  function staticLine(THREE, points, color, resources) { const geometry = new THREE.BufferGeometry().setFromPoints(points), material = new THREE.LineBasicMaterial({ color }); resources.push(geometry, material); return new THREE.Line(geometry, material); }
-  function dynamicLine(THREE, geometry, color, resources) { const material = new THREE.LineBasicMaterial({ color }); resources.push(geometry, material); return new THREE.Line(geometry, material); }
-  function circlePoints(THREE, radius, segments) { const points = []; for (let index = 0; index <= segments; index++) { const angle = index * 360 / segments; const p = lonLatToVector(angle, 0, radius); points.push(v(THREE, p.x, p.y, p.z)); } return points; }
-  function tiltedEquatorPoints(THREE) { const points = circlePoints(THREE, DISPLAY.sphereRadius, 96), cos = Math.cos(DISPLAY.obliquityDeg * DEGREE), sin = Math.sin(DISPLAY.obliquityDeg * DEGREE); points.forEach(function (point) { const y = point.y * cos + point.z * sin, z = point.z * cos - point.y * sin; point.y = y; point.z = z; }); return points; }
-  function makeArcGeometry(THREE) { const geometry = new THREE.BufferGeometry(), array = new Float32Array((DISPLAY.solarArcSegments + 1) * 3); geometry.setAttribute('position', new THREE.BufferAttribute(array, 3)); return geometry; }
-  function setVectorFromLonLat(target, longitude, latitude, radius) { const point = lonLatToVector(longitude, latitude, radius); target.set(point.x, point.y, point.z); }
+  function staticLine(THREE, points, material, resources) { const geometry = new THREE.BufferGeometry().setFromPoints(points); resources.push(geometry, material); return new THREE.Line(geometry, material); }
+  function dynamicLine(THREE, geometry, color, resources) { const material = new THREE.LineBasicMaterial({ color: color }); resources.push(geometry, material); return new THREE.Line(geometry, material); }
+  function circlePoints(THREE, radius, segments) { const points = []; for (let i = 0; i <= segments; i++) { const point = new THREE.Vector3(); setVectorFromLonLat(point, i * 360 / segments, 0, radius); points.push(point); } return points; }
+  function makeArcGeometry(THREE) { const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((DISPLAY.solarArcSegments + 1) * 3), 3)); return geometry; }
+  function setVectorFromLonLat(target, longitudeDeg, latitudeDeg, radius) { const longitude = normalDegrees(longitudeDeg) * DEGREE, latitude = latitudeDeg * DEGREE, horizontal = radius * Math.cos(latitude); target.set(horizontal * Math.cos(longitude), radius * Math.sin(latitude), horizontal * Math.sin(longitude)); }
   function markAttribute(attribute) { attribute.needsUpdate = true; if (Object.prototype.hasOwnProperty.call(attribute, 'needsUpdateCount')) attribute.needsUpdateCount += 1; }
-  function writeLongitudeArc(geometry, longitude, latitude, radius) { const attribute = geometry.getAttribute('position'); for (let index = 0; index <= DISPLAY.solarArcSegments; index++) { const p = lonLatToVector(longitude * index / DISPLAY.solarArcSegments, latitude, radius); attribute.setXYZ(index, p.x, p.y, p.z); } markAttribute(attribute); }
-  function writeLatitudeArc(geometry, longitude, latitude, radius) { const attribute = geometry.getAttribute('position'); for (let index = 0; index <= DISPLAY.solarArcSegments; index++) { const p = lonLatToVector(longitude, latitude * index / DISPLAY.solarArcSegments, radius); attribute.setXYZ(index, p.x, p.y, p.z); } markAttribute(attribute); }
+  function writeLongitudeArc(geometry, longitude, latitude, radius) { const attribute = geometry.getAttribute('position'); for (let i = 0; i <= DISPLAY.solarArcSegments; i++) { const longitudeRad = longitude * i / DISPLAY.solarArcSegments * DEGREE, latitudeRad = latitude * DEGREE, horizontal = radius * Math.cos(latitudeRad); attribute.setXYZ(i, horizontal * Math.cos(longitudeRad), radius * Math.sin(latitudeRad), horizontal * Math.sin(longitudeRad)); } markAttribute(attribute); }
+  function writeLatitudeArc(geometry, longitude, latitude, radius) { const attribute = geometry.getAttribute('position'), longitudeRad = normalDegrees(longitude) * DEGREE; for (let i = 0; i <= DISPLAY.solarArcSegments; i++) { const latitudeRad = latitude * i / DISPLAY.solarArcSegments * DEGREE, horizontal = radius * Math.cos(latitudeRad); attribute.setXYZ(i, horizontal * Math.cos(longitudeRad), radius * Math.sin(latitudeRad), horizontal * Math.sin(longitudeRad)); } markAttribute(attribute); }
   function setLineEndpoint(geometry, endpoint) { const attribute = geometry.getAttribute('position'); attribute.setXYZ(0, 0, 0, 0); attribute.setXYZ(1, endpoint.x, endpoint.y, endpoint.z); markAttribute(attribute); }
-  function createLabel(layer, text) { const label = typeof document !== 'undefined' && document.createElement ? document.createElement('span') : { style: {}, textContent: '', className: '' }; label.className = 'scene-label'; label.textContent = text; if (layer && layer.appendChild) layer.appendChild(label); return label; }
-  function createLabels(layer) { return [createLabel(layer, '当前节气：—'), createLabel(layer, '下一节气：—'), createLabel(layer, '月球黄纬：—'), createLabel(layer, '距交点：—'), createLabel(layer, '照亮：—'), createLabel(layer, '食季：—')]; }
-  function addStaticLabels(labels, layer, names) { labels.push(createLabel(layer, 'λ☉'), createLabel(layer, '春分 0°'), createLabel(layer, '夏至 90°'), createLabel(layer, '秋分 180°'), createLabel(layer, '冬至 270°')); for (let index = 0; index < 24; index++) labels.push(createLabel(layer, names[index] || String(index * 15) + '°')); }
-  function updateDynamicLabels(labels, state) { const terms = termsFor(state); const eclipse = state.moon.eclipseSeasonHint; labels[0].textContent = '当前节气：' + (terms.current && terms.current.name || '—'); labels[1].textContent = '下一节气：' + (terms.next && terms.next.name || '—'); labels[2].textContent = '月球黄纬：' + signed(state.moon.latitudeDeg) + '°'; labels[3].textContent = '距交点：' + state.moon.nodeDistanceDeg.toFixed(2) + '°'; labels[4].textContent = '照亮：' + Math.round(state.moon.illumination * 100) + '%'; labels[5].textContent = '食季：' + (eclipse && eclipse.possible ? '可能接近交点' : '未接近交点'); }
+  function createLabel(THREE, layer, text, records) { const element = typeof document !== 'undefined' && document.createElement ? document.createElement('span') : { style: {}, textContent: '', className: '' }; element.className = 'scene-label'; element.textContent = text; element.style.position = 'absolute'; element.style.pointerEvents = 'none'; const record = { element: element, anchor: new THREE.Vector3() }; element.anchor = record.anchor; if (layer && layer.appendChild) layer.appendChild(element); records.push(record); return record; }
+  function buildLabels(THREE, layer, names, records) { const labels = { current: createLabel(THREE, layer, '当前节气：—', records), next: createLabel(THREE, layer, '下一节气：—', records), latitude: createLabel(THREE, layer, '月球黄纬：—', records), node: createLabel(THREE, layer, '距交点：—', records), phase: createLabel(THREE, layer, '月相：—', records), eclipse: createLabel(THREE, layer, '食季：—', records), lambda: createLabel(THREE, layer, 'λ☉ = —', records), sun: null, moon: null, projection: null }; labels.sun = labels.current; labels.moon = labels.latitude; labels.projection = labels.node; ['春分 0°', '夏至 90°', '秋分 180°', '冬至 270°'].forEach(function (text, index) { const record = createLabel(THREE, layer, text, records); setVectorFromLonLat(record.anchor, index * 90, 0, DISPLAY.sphereRadius + 1.7); }); for (let index = 0; index < 24; index++) { const record = createLabel(THREE, layer, names[index] || String(index * 15) + '°', records); setVectorFromLonLat(record.anchor, index * 15, 0, DISPLAY.sphereRadius + 1.7); } setVectorFromLonLat(labels.lambda.anchor, 0, 0, DISPLAY.sphereRadius * 0.62); return labels; }
+  function setLabel(record, text) { if (record.element.textContent !== text) record.element.textContent = text; }
+  function updateDynamicLabels(labels, state, solarLongitude) { const terms = termsFor(state), eclipse = state.moon.eclipseSeasonHint; setLabel(labels.current, '当前节气：' + (terms.current && terms.current.name || '—')); setLabel(labels.next, '下一节气：' + (terms.next && terms.next.name || '—')); setLabel(labels.latitude, '月球黄纬：' + signed(state.moon.latitudeDeg) + '°'); setLabel(labels.node, '距交点：' + state.moon.nodeDistanceDeg.toFixed(2) + '°'); setLabel(labels.phase, '月相：' + state.moon.phaseName + ' · ' + (state.moon.waxing ? '盈' : '亏')); setLabel(labels.eclipse, '食季：' + (eclipse && eclipse.possible ? '可能接近交点' : '未接近交点')); setLabel(labels.lambda, 'λ☉ = ' + solarLongitude.toFixed(2) + '°'); }
   function signed(value) { return (value >= 0 ? '+' : '') + value.toFixed(2); }
-  function disposeResource(resource) { if (resource && typeof resource.dispose === 'function') resource.dispose(); }
-  return Object.freeze({ DISPLAY, toVisualModel, lonLatToVector, create });
+  function disposeResource(resource) { if (resource && resource.dispose) resource.dispose(); }
+  return Object.freeze({ DISPLAY: DISPLAY, toVisualModel: toVisualModel, lonLatToVector: lonLatToVector, tiltedEquatorCoordinates: tiltedEquatorCoordinates, debugCoordinateAllocations: debugCoordinateAllocations, create: create });
 });
