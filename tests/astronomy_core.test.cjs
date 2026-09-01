@@ -118,6 +118,9 @@ test('Moon state geometry is coherent with its inclined 3D orbit', () => {
   assert.equal(moon.nearestNodeLabel, expectedLabel);
   assert.ok(Math.abs(moon.perigeeDistanceKm - 384400 * (1 - 0.0549)) < 1e-9);
   assert.ok(Math.abs(moon.apogeeDistanceKm - 384400 * (1 + 0.0549)) < 1e-9);
+  assert.ok(Number.isFinite(moon.argumentOfPerigeeDeg));
+  assert.equal(moon.orbit.argumentOfPerigeeDeg, moon.argumentOfPerigeeDeg);
+  assert.ok(moon.argumentOfPerigeeDeg >= 0 && moon.argumentOfPerigeeDeg < 360);
 });
 
 test('Moon state derives elongation from supplied Sun and Moon vectors', () => {

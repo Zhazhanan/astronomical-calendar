@@ -260,8 +260,8 @@
       listeners.splice(0).forEach(function(listener) { listener[0].removeEventListener(listener[1], listener[2]); });
       SCENE_IDS.forEach(function(id) {
         const scene = scenes[id];
-        if (scene && scene.controls && typeof scene.controls.dispose === 'function') scene.controls.dispose();
         if (scene && typeof scene.dispose === 'function') scene.dispose();
+        else if (scene && scene.controls && typeof scene.controls.dispose === 'function') scene.controls.dispose();
       });
       if (renderer && typeof renderer.dispose === 'function') renderer.dispose();
     }

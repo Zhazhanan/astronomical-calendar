@@ -21,6 +21,9 @@ test('one instant produces synchronized Sun, Earth, and Moon state', () => {
   assert.equal(Object.isFrozen(state.moon.positionKm), true);
   assert.equal(state.moon.eclipseSeasonHint.possible, false);
   assert.equal(Object.isFrozen(state.moon.eclipseSeasonHint), true);
+  assert.equal(state.earth.rotationAngleDeg, Observer.greenwichSiderealTimeDeg(instantUtc));
+  assert.ok(state.earth.rotationAngleDeg >= 0 && state.earth.rotationAngleDeg < 360);
+  assert.equal(Object.isFrozen(state.earth), true);
 });
 
 test('invalid input returns a stable error rather than partial state', () => {
@@ -108,7 +111,7 @@ test('annual timeline caches by dependency identity and returns isolated frozen 
       return { year, timeZone, gregorian: [{ month: 1 }] };
     }
   };
-  const fakeObserver = { observerState() {} };
+  const fakeObserver = { observerState() {}, greenwichSiderealTimeDeg() { return 0; } };
   const dependencies = { Astronomy: fakeAstronomy, Calendar: fakeCalendar, Observer: fakeObserver, lunarApi: fakeLunarApi };
   const first = WorldState.annualTimeline(2026, 'Asia/Shanghai', dependencies);
   const second = WorldState.annualTimeline(2026, 'Asia/Shanghai', dependencies);
@@ -200,7 +203,7 @@ test('WorldState snapshots dependency results without freezing or retaining thei
       calendarState: () => sharedCalendar,
       annualTimeline: () => ({})
     },
-    Observer: { observerState: () => ({ location: { name: '测试', latitudeDeg: 1, longitudeDeg: 2 }, warning: null }) },
+    Observer: { observerState: () => ({ location: { name: '测试', latitudeDeg: 1, longitudeDeg: 2 }, warning: null }), greenwichSiderealTimeDeg: () => 12 },
     lunarApi: { Solar: { fromYmd() {} } }
   };
   const state = WorldState.create({ instantUtc: 1, timeZone: 'Asia/Shanghai', dependencies });
@@ -228,7 +231,7 @@ test('WorldState annual timeline cache includes Calendar implementation identity
   const secondRef = { count: secondCalls };
   const firstCalendar = calendar(firstRef, 'first');
   const secondCalendar = calendar(secondRef, 'second');
-  const base = { Astronomy: AstronomyDependency, Observer: { observerState() {} }, lunarApi: lunarDependency };
+  const base = { Astronomy: AstronomyDependency, Observer: { observerState() {}, greenwichSiderealTimeDeg() { return 0; } }, lunarApi: lunarDependency };
   assert.equal(WorldState.annualTimeline(2026, 'Asia/Shanghai', Object.assign({}, base, { Calendar: firstCalendar })).marker, 'first');
   assert.equal(WorldState.annualTimeline(2026, 'Asia/Shanghai', Object.assign({}, base, { Calendar: secondCalendar })).marker, 'second');
   assert.equal(firstRef.count, 1);
@@ -239,5 +242,14 @@ test('WorldState rejects incomplete dependencies with stable method contracts', 
   assert.throws(
     () => WorldState.create({ instantUtc: 1, dependencies: { Astronomy: {} } }),
     /Astronomy dependency must provide earthHeliocentricState, solarGeocentricState, moonGeocentricState, and eclipseSeasonHint/
+  );
+});
+
+test('WorldState requires sidereal rotation from its observer dependency', () => {
+  assert.throws(
+    () => WorldState.create({ instantUtc: 1, dependencies: {
+      Astronomy, Calendar, Observer: { observerState() {} }, lunarApi
+    } }),
+    /Observer dependency must provide observerState and greenwichSiderealTimeDeg/
   );
 });

@@ -116,6 +116,26 @@ test('dispose is idempotent and removes its basic window listeners', () => {
   assert.equal(listeners.size, 0);
 });
 
+test('host lets a scene own its controls disposal exactly once', () => {
+  const environment = productionFakes();
+  let sceneDisposals = 0;
+  let controlDisposals = 0;
+  const host = SceneHost.create({
+    canvas: environment.canvas,
+    containers: environment.containers,
+    THREE: environment.THREE,
+    scenes: {
+      heliocentric: { controls: { dispose: () => { controlDisposals += 1; } }, dispose: () => { sceneDisposals += 1; } },
+      geocentric: {}
+    },
+    window: environment.window
+  });
+  host.dispose();
+  host.dispose();
+  assert.equal(sceneDisposals, 1);
+  assert.equal(controlDisposals, 0);
+});
+
 test('production host uses one renderer, independent interaction targets, measured scissors, and cleaned listeners', () => {
   const environment = productionFakes();
   const controlsTargets = [];

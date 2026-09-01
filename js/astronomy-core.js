@@ -233,6 +233,7 @@
       phaseName: phaseName(elongationDeg),
       ascendingNodeLongitudeDeg,
       descendingNodeLongitudeDeg,
+      argumentOfPerigeeDeg,
       ascendingNodeLabel: '升交点',
       descendingNodeLabel: '降交点',
       nearestNodeLabel: isAscendingNodeNearest ? '升交点' : '降交点',
@@ -242,6 +243,7 @@
       orbit: {
         inclinationDeg: lunarInclinationDeg,
         eccentricity: lunarEccentricity,
+        argumentOfPerigeeDeg,
         siderealDays: lunarSiderealDays,
         nodalRegressionYears: lunarNodalRegressionYears
       }

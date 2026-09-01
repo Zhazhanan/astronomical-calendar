@@ -67,8 +67,8 @@
       typeof Calendar.resolveTimeZone !== 'function') {
       throw new Error('Calendar dependency must provide calendarState, annualTimeline, and resolveTimeZone');
     }
-    if (!Observer || typeof Observer.observerState !== 'function') {
-      throw new Error('Observer dependency must provide observerState');
+    if (!Observer || typeof Observer.observerState !== 'function' || typeof Observer.greenwichSiderealTimeDeg !== 'function') {
+      throw new Error('Observer dependency must provide observerState and greenwichSiderealTimeDeg');
     }
     if (!lunarApi || !lunarApi.Solar || typeof lunarApi.Solar.fromYmd !== 'function') {
       throw new Error('lunarApi dependency must provide Solar.fromYmd');
@@ -133,7 +133,9 @@
       Astronomy: dependencies.Astronomy,
       lunarApi: dependencies.lunarApi
     });
-    const earth = dependencies.Astronomy.earthHeliocentricState(instantUtc);
+    const earth = Object.assign({}, dependencies.Astronomy.earthHeliocentricState(instantUtc), {
+      rotationAngleDeg: dependencies.Observer.greenwichSiderealTimeDeg(instantUtc)
+    });
     const sunBase = dependencies.Astronomy.solarGeocentricState(instantUtc);
     const moonState = dependencies.Astronomy.moonGeocentricState(instantUtc, sunBase);
     const observer = dependencies.Observer.observerState({
