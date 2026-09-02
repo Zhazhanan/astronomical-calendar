@@ -112,6 +112,20 @@ test('resetView restores the geocentric teaching camera and its control target',
   assert.deepEqual({ x: scene.controls.target.x, y: scene.controls.target.y, z: scene.controls.target.z }, { x: 0, y: 0, z: 0 });
   scene.dispose();
 });
+test('advanced layers are lazy, visible when enabled, and reuse their Three objects', () => {
+  const THREE = createFakeThree(), scene = Geocentric.create({ THREE, interactionElement: {}, solarTermNames: names() });
+  assert.equal(scene.scene.userData.advanced, undefined);
+  scene.initializeAdvancedLayers();
+  const advanced = scene.scene.userData.advanced;
+  assert.ok(advanced); assert.equal(advanced.milkyWay.visible, false); assert.equal(advanced.mansions.visible, false);
+  scene.setAdvancedLayer('advancedMilkyWay', true); scene.setAdvancedLayer('advancedMansions', true);
+  assert.equal(advanced.milkyWay.visible, true); assert.equal(advanced.mansions.visible, true);
+  scene.setAdvancedLayer('starCatalog', [{ name: 'A', vector: { x: 1, y: 0, z: 0 } }, { name: 'B', vector: { x: 0, y: 1, z: 0 } }]);
+  assert.equal(advanced.catalogPoints.visible, true); assert.equal(advanced.catalogPoints.geometry.drawCount, 2);
+  scene.setAdvancedLayer('advancedMilkyWay', false); scene.initializeAdvancedLayers();
+  assert.strictEqual(scene.scene.userData.advanced, advanced); assert.equal(advanced.milkyWay.visible, false);
+  scene.dispose(); assert.ok(THREE.disposedGeometries > 0 && THREE.disposedMaterials > 0);
+});
 
 function names() { return Array.from({ length: 24 }, (_, index) => '节气' + index); }
 function labelLayer(items) { return { appendChild(label) { items.push(label); } }; }
@@ -124,8 +138,8 @@ function createFakeThree() {
   class Object3D { constructor() { this.children = []; this.position = new Vector3(); this.rotation = new Vector3(); this.scale = new Vector3(1, 1, 1); this.userData = {}; } add(...items) { this.children.push(...items); } }
   class Group extends Object3D {} class Scene extends Group {} class PerspectiveCamera extends Object3D { lookAt() {} }
   class BufferAttribute { constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; this.needsUpdate = false; this.needsUpdateCount = 0; } setXYZ(index, x, y, z) { const base = index * this.itemSize; this.array[base] = x; this.array[base + 1] = y; this.array[base + 2] = z; } }
-  class BufferGeometry { constructor() { this.attributes = {}; } setFromPoints(points) { this.attributes.position = new BufferAttribute(new Float32Array(points.length * 3), 3); points.forEach((p, i) => this.attributes.position.setXYZ(i, p.x, p.y, p.z)); return this; } setAttribute(name, attribute) { this.attributes[name] = attribute; return this; } getAttribute(name) { return this.attributes[name]; } dispose() { stats.disposedGeometries++; } }
+  class BufferGeometry { constructor() { this.attributes = {}; this.drawCount = 0; } setFromPoints(points) { this.attributes.position = new BufferAttribute(new Float32Array(points.length * 3), 3); points.forEach((p, i) => this.attributes.position.setXYZ(i, p.x, p.y, p.z)); return this; } setAttribute(name, attribute) { this.attributes[name] = attribute; return this; } getAttribute(name) { return this.attributes[name]; } setDrawRange(_start, count) { this.drawCount = count; } dispose() { stats.disposedGeometries++; } }
   class Geometry { dispose() { stats.disposedGeometries++; } } class Material { constructor(options) { Object.assign(this, options); } dispose() { stats.disposedMaterials++; } }
-  class Mesh extends Object3D { constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; } } class Line extends Mesh { computeLineDistances() { this.lineDistancesComputed = true; this.geometry.setAttribute('lineDistance', new BufferAttribute(new Float32Array(2), 1)); } } class OrbitControls { constructor(camera, element) { this.camera = camera; this.domElement = element; } dispose() { stats.controlsDisposed++; } }
-  return Object.assign(stats, { Vector3, Group, Scene, PerspectiveCamera, BufferAttribute, BufferGeometry, SphereGeometry: Geometry, RingGeometry: Geometry, MeshBasicMaterial: Material, LineBasicMaterial: Material, LineDashedMaterial: class LineDashedMaterial extends Material {}, Mesh, Line, OrbitControls });
+  class Mesh extends Object3D { constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; } } class Line extends Mesh { computeLineDistances() { this.lineDistancesComputed = true; this.geometry.setAttribute('lineDistance', new BufferAttribute(new Float32Array(2), 1)); } } class Points extends Mesh {} class OrbitControls { constructor(camera, element) { this.camera = camera; this.domElement = element; } dispose() { stats.controlsDisposed++; } }
+  return Object.assign(stats, { Vector3, Group, Scene, PerspectiveCamera, BufferAttribute, BufferGeometry, SphereGeometry: Geometry, RingGeometry: Geometry, MeshBasicMaterial: Material, PointsMaterial: Material, LineBasicMaterial: Material, LineDashedMaterial: class LineDashedMaterial extends Material {}, Mesh, Line, Points, OrbitControls });
 }

@@ -8,7 +8,7 @@ function node(value) {
   const listeners = {};
   const attributes = {}, children = [];
   const result = {
-    value: value || '', checked: false, disabled: false, textContent: '', children, classList: { add() {}, remove() {} },
+    value: value || '', checked: false, disabled: false, files: null, textContent: '', children, classList: { add() {}, remove() {} },
     addEventListener(name, fn) { (listeners[name] ||= []).push(fn); },
     removeEventListener(name, fn) { listeners[name] = (listeners[name] || []).filter((item) => item !== fn); },
     emit(name, event) { (listeners[name] || []).forEach((fn) => fn(event || { target: this, preventDefault() {} })); },
@@ -44,9 +44,10 @@ function descendants(root) {
 }
 
 function setup() {
-  const ids = ['dateTimeInput', 'previousDayButton', 'todayButton', 'nextDayButton', 'playPauseButton', 'speedSelect', 'timeZoneSelect', 'resolvedTimeZone', 'locationSelect', 'latitudeInput', 'longitudeInput', 'showOrbit', 'showLabels', 'showObserver', 'showDayNight', 'heliocentricSceneBtn', 'geocentricSceneBtn', 'appStatus', 'timelineScroll', 'timelineNotice', 'currentMomentCardBody', 'solarSeasonCardBody', 'calendarMoonCardBody', 'ganzhiCardBody', 'ganzhiCardValues', 'observerCardBody', 'whyCardBody', 'yearLookupInput', 'yearLookupResult', 'sixtyYearRingToggle', 'sixtyYearRing'];
+  const ids = ['dateTimeInput', 'previousDayButton', 'todayButton', 'nextDayButton', 'playPauseButton', 'speedSelect', 'timeZoneSelect', 'resolvedTimeZone', 'locationSelect', 'latitudeInput', 'longitudeInput', 'showOrbit', 'showLabels', 'showObserver', 'showDayNight', 'heliocentricSceneBtn', 'geocentricSceneBtn', 'appStatus', 'timelineScroll', 'timelineNotice', 'currentMomentCardBody', 'solarSeasonCardBody', 'calendarMoonCardBody', 'ganzhiCardBody', 'ganzhiCardValues', 'observerCardBody', 'whyCardBody', 'yearLookupInput', 'yearLookupResult', 'sixtyYearRingToggle', 'sixtyYearRing', 'advancedAstronomy', 'advancedMilkyWay', 'advancedMansions', 'advancedCatalogInput', 'advancedRaUnit', 'advancedCatalogStatus', 'advancedCatalogSummary'];
   const nodes = Object.fromEntries(ids.map((id) => [id, node()]));
   nodes.speedSelect.value = '7'; nodes.timeZoneSelect.value = 'Asia/Shanghai'; nodes.locationSelect.value = 'beijing';
+  nodes.advancedRaUnit.value = 'degrees';
   const document = Object.assign(node(), { getElementById: (id) => nodes[id] || null, createElement: () => node(), createElementNS: () => node() });
   let state = { instantUtc: 0, timeZone: 'Asia/Shanghai', location: { name: '北京', latitudeDeg: 39.9042, longitudeDeg: 116.4074 }, playing: false, daysPerSecond: 7 };
   const calls = [];
@@ -233,4 +234,28 @@ test('app supplies one shared WorldState to the panel and SceneHost without dire
   assert.equal(creates, 1); assert.strictEqual(updates[0][1], renders[0]); assert.deepEqual(panelOptions.getAnnualTimeline(2026, 'Asia/Shanghai'), { year: 2026, zone: 'Asia/Shanghai' });
   subscriber({ ...state, instantUtc: 1 });
   assert.equal(creates, 2); assert.strictEqual(updates[1][1], renders[1]); handle.stop();
+});
+
+test('advanced panel initializes once, toggles independent layers, and preserves offline fallback', () => {
+  const s = setup(), calls = [];
+  const panel = Education.create({ root: s.document, clock: s.clock, Calendar: s.Calendar, Observer: s.Observer, onAdvancedLayer: (kind, value) => { calls.push([kind, value]); return false; } });
+  s.nodes.advancedAstronomy.open = true; s.nodes.advancedAstronomy.emit('toggle'); s.nodes.advancedAstronomy.emit('toggle');
+  s.nodes.advancedMilkyWay.checked = true; s.nodes.advancedMilkyWay.emit('change');
+  s.nodes.advancedMansions.checked = true; s.nodes.advancedMansions.emit('change');
+  assert.deepEqual(calls, [['initialize', true], ['advancedMilkyWay', true], ['advancedMansions', true]]);
+  assert.match(s.nodes.advancedCatalogStatus.textContent, /三维场景不可用/); panel.dispose();
+});
+
+test('catalog readers ignore stale callbacks and disposal callbacks', () => {
+  const s = setup(), calls = [], readers = [];
+  class Reader { constructor() { readers.push(this); this.result = ''; this.aborted = false; } readAsText() {} abort() { this.aborted = true; if (this.onabort) this.onabort(); } }
+  const catalog = { validateFile() {}, parseCsv: (text) => ({ stars: [{ name: text, raDeg: 1, decDeg: 2 }], acceptedRows: 1, skippedRows: 0, fatalErrors: [] }) };
+  const panel = Education.create({ root: s.document, clock: s.clock, Calendar: s.Calendar, Observer: s.Observer, StarCatalog: catalog, FileReader: Reader, onAdvancedLayer: (kind, value) => { calls.push([kind, value]); return true; } });
+  s.nodes.advancedCatalogInput.files = [{ size: 1 }]; s.nodes.advancedCatalogInput.emit('change');
+  s.nodes.advancedCatalogInput.files = [{ size: 1 }]; s.nodes.advancedCatalogInput.emit('change');
+  assert.equal(readers.length, 2); assert.equal(readers[0].aborted, true);
+  readers[0].result = 'old'; readers[0].onload(); assert.equal(calls.length, 0);
+  readers[1].result = 'new'; readers[1].onload(); assert.equal(calls.length, 1); assert.equal(calls[0][1][0].name, 'new');
+  s.nodes.advancedCatalogInput.files = [{ size: 1 }]; s.nodes.advancedCatalogInput.emit('change'); const late = readers[2]; panel.dispose(); late.result = 'late'; late.onload();
+  assert.equal(calls.length, 1);
 });

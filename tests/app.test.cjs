@@ -107,3 +107,21 @@ test('context restored while hidden waits for visibility before restoring prior 
   s.document.emit('visibilitychange');
   assert.equal(s.controller.getState().playing, true);
 });
+
+test('advanced layers reach a real scene once and are reapplied after a rebuild', () => {
+  const s = setup(), calls = []; let panelOptions, hostOptions;
+  s.scenes.geocentric.initializeAdvancedLayers = () => calls.push(['initialize']);
+  s.scenes.geocentric.setAdvancedLayer = (kind, value, worldState) => calls.push([kind, value, worldState]);
+  s.education.EducationPanel = { create: (options) => { panelOptions = options; return { update() {}, dispose() {} }; } };
+  s.education.SceneHost.create = (options) => { hostOptions = options; return s.host; };
+  App.start({ AstroEducation: s.education, document: s.document, window: s.window, THREE: {}, timeController: s.controller, scenes: s.scenes });
+  assert.equal(panelOptions.onAdvancedLayer('initialize', true), true);
+  assert.equal(panelOptions.onAdvancedLayer('advancedMilkyWay', true), true);
+  assert.equal(panelOptions.onAdvancedLayer('starCatalog', [{ name: 'A' }]), true);
+  assert.equal(calls.filter((call) => call[0] === 'initialize').length, 1);
+  assert.strictEqual(calls.find((call) => call[0] === 'advancedMilkyWay')[2], s.renders[0]);
+  hostOptions.onScenesRebuilt();
+  assert.equal(calls.filter((call) => call[0] === 'initialize').length, 2);
+  assert.equal(calls.filter((call) => call[0] === 'advancedMilkyWay').length, 2);
+  assert.equal(calls.filter((call) => call[0] === 'starCatalog').length, 2);
+});

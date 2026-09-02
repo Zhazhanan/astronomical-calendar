@@ -279,21 +279,22 @@
       const Reader = config.FileReader || (typeof FileReader !== 'undefined' ? FileReader : null);
       if (!Reader) { advancedStatus('当前浏览器无法读取本地文件；未上传或发送任何数据。'); return; }
       if (catalogReader && typeof catalogReader.abort === 'function') catalogReader.abort();
-      catalogReader = new Reader(); advancedStatus('正在只在本地读取 CSV…');
-      catalogReader.onerror = function () { advancedStatus('本地 CSV 读取失败；文件没有离开此设备。'); catalogReader = null; };
-      catalogReader.onabort = function () { catalogReader = null; };
-      catalogReader.onload = function () {
+      const reader = new Reader(); catalogReader = reader; advancedStatus('正在只在本地读取 CSV…');
+      reader.onerror = function () { if (disposed || catalogReader !== reader) return; advancedStatus('本地 CSV 读取失败；文件没有离开此设备。'); catalogReader = null; };
+      reader.onabort = function () { if (!disposed && catalogReader === reader) catalogReader = null; };
+      reader.onload = function () {
+        if (disposed || catalogReader !== reader) return;
         try {
           const unit = get('advancedRaUnit') && get('advancedRaUnit').value;
-          const result = StarCatalog.parseCsv(String(catalogReader.result || ''), { raUnit: unit });
+          const result = StarCatalog.parseCsv(String(reader.result || ''), { raUnit: unit });
           if (result.fatalErrors.length) { advancedStatus(result.fatalErrors.join(' ')); return; }
           advancedSummary(result); advancedStatus(`本地导入完成：${result.acceptedRows} 条可用，${result.skippedRows} 条已跳过。`);
           if (!onAdvancedLayer('starCatalog', result.stars)) advancedStatus(`本地导入完成：${result.acceptedRows} 条可用，${result.skippedRows} 条已跳过。三维场景不可用，显示摘要。`);
           onRenderRequested();
         } catch (error) { advancedStatus('CSV 解析失败：' + (error && error.message || '未知错误')); }
-        finally { catalogReader = null; }
+        finally { if (catalogReader === reader) catalogReader = null; }
       };
-      catalogReader.readAsText(file, 'utf-8');
+      reader.readAsText(file, 'utf-8');
     }
     function bind() {
       listen('dateTimeInput', 'change', applyDateTime); listen('previousDayButton', 'click', () => clock.stepDays(-1)); listen('nextDayButton', 'click', () => clock.stepDays(1)); listen('todayButton', 'click', () => clock.setInstant(now()));
@@ -365,7 +366,7 @@
       onRenderRequested();
     }
     bind();
-    return Object.freeze({ update, dispose: function () { if (disposed) return; disposed = true; if (catalogReader && typeof catalogReader.abort === 'function') catalogReader.abort(); if (highlightTimer) timers.clearTimeout(highlightTimer); listeners.splice(0).forEach((item) => item[0].removeEventListener(item[1], item[2])); } });
+    return Object.freeze({ update, dispose: function () { if (disposed) return; disposed = true; const reader = catalogReader; catalogReader = null; if (reader && typeof reader.abort === 'function') reader.abort(); if (highlightTimer) timers.clearTimeout(highlightTimer); listeners.splice(0).forEach((item) => item[0].removeEventListener(item[1], item[2])); } });
   }
   return Object.freeze({ controlViewModel, boundaryChanges, timelineViewModel, lunarSegmentView, timelineScrubController, renderTimeline, currentMomentCardView, solarSeasonCardView, calendarMoonCardView, ganzhiCardView, observerCardView, whyCardView, yearLookupView, create });
 });

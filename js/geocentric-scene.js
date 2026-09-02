@@ -37,7 +37,36 @@
     root.add(earth, ecliptic, equator, axes, springRay, termTicks, solarArc, sun, earthSunRay, moon, moonProjection, latitudeArc, phaseIndicator);
     const labels = buildLabels(THREE, config.labelLayer, config.solarTermNames || [], labelRecords);
     const sunPosition = new THREE.Vector3(), moonPosition = new THREE.Vector3(), projectionPosition = new THREE.Vector3(), lambdaPosition = new THREE.Vector3(), projected = new THREE.Vector3();
-    let lastState = null, lastSolarLongitude = NaN, lastMoonLongitude = NaN, lastMoonLatitude = NaN, disposed = false;
+    let lastState = null, lastSolarLongitude = NaN, lastMoonLongitude = NaN, lastMoonLatitude = NaN, disposed = false, advanced = null;
+    function initializeAdvancedLayers() {
+      if (advanced || disposed) return advanced;
+      const group = new THREE.Group(); group.visible = true;
+      const milkyGeometry = new THREE.BufferGeometry().setFromPoints(advancedBandPoints(THREE));
+      const milkyMaterial = new THREE.LineBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.32 });
+      const milkyWay = new THREE.Line(milkyGeometry, milkyMaterial); milkyWay.visible = false; milkyWay.userData = { illustrative: true, label: '银河示意' };
+      const mansionGeometry = new THREE.BufferGeometry(), mansionPositions = new Float32Array(28 * 3);
+      for (let index = 0; index < 28; index += 1) { const point = lonLatToVector(index * 360 / 28, Math.sin(index * 1.7) * 18, DISPLAY.sphereRadius + 1.1); mansionPositions[index * 3] = point.x; mansionPositions[index * 3 + 1] = point.y; mansionPositions[index * 3 + 2] = point.z; }
+      mansionGeometry.setAttribute('position', new THREE.BufferAttribute(mansionPositions, 3)); if (mansionGeometry.setDrawRange) mansionGeometry.setDrawRange(0, 28);
+      const mansions = new THREE.Points(mansionGeometry, new THREE.PointsMaterial({ color: 0xf9a8d4, size: 0.65, sizeAttenuation: false })); mansions.visible = false; mansions.userData = { traditionalIllustration: true, label: '二十八宿（传统星官示意）' };
+      const catalogGeometry = new THREE.BufferGeometry(), catalogPositions = new Float32Array(10_000 * 3);
+      catalogGeometry.setAttribute('position', new THREE.BufferAttribute(catalogPositions, 3)); if (catalogGeometry.setDrawRange) catalogGeometry.setDrawRange(0, 0);
+      const catalogPoints = new THREE.Points(catalogGeometry, new THREE.PointsMaterial({ color: 0xffffff, size: 0.42, sizeAttenuation: false })); catalogPoints.visible = false; catalogPoints.userData = { localOnly: true, count: 0 };
+      resources.push(milkyGeometry, milkyMaterial, mansionGeometry, mansions.material, catalogGeometry, catalogPoints.material);
+      group.add(milkyWay, mansions, catalogPoints); root.add(group);
+      advanced = { group, milkyWay, mansions, catalogPoints }; scene.userData.advanced = advanced;
+      return advanced;
+    }
+    function setAdvancedLayer(kind, value) {
+      const layers = initializeAdvancedLayers(); if (!layers) return false;
+      if (kind === 'advancedMilkyWay') { layers.milkyWay.visible = !!value; return true; }
+      if (kind === 'advancedMansions') { layers.mansions.visible = !!value; return true; }
+      if (kind === 'starCatalog') {
+        const stars = Array.isArray(value) ? value.slice(0, 10_000) : [], attribute = layers.catalogPoints.geometry.getAttribute('position');
+        stars.forEach(function (star, index) { const vector = star && star.vector; if (!vector || !finite(vector.x) || !finite(vector.y) || !finite(vector.z)) return; attribute.setXYZ(index, vector.x * (DISPLAY.sphereRadius + 1.3), vector.z * (DISPLAY.sphereRadius + 1.3), vector.y * (DISPLAY.sphereRadius + 1.3)); });
+        markAttribute(attribute); if (layers.catalogPoints.geometry.setDrawRange) layers.catalogPoints.geometry.setDrawRange(0, stars.length); layers.catalogPoints.userData.count = stars.length; layers.catalogPoints.visible = stars.length > 0; return true;
+      }
+      return kind === 'initialize';
+    }
     function update(state) {
       if (disposed || state === lastState) return;
       if (!validState(state)) throw new TypeError(REQUIRED_STATE_ERROR); lastState = state;
@@ -57,13 +86,14 @@
     function resetView() { camera.position.set(0, 31, 53); if (controls && controls.target && controls.target.set) controls.target.set(0, 0, 0); if (controls && controls.update) controls.update(); }
     function dispose() { if (disposed) return; disposed = true; if (controls && controls.dispose) controls.dispose(); resources.forEach(disposeResource); labelRecords.forEach(function (record) { if (record.element.parentNode && record.element.parentNode.removeChild) record.element.parentNode.removeChild(record.element); }); }
     scene.userData = scene.userData || {}; Object.assign(scene.userData, { root, earth, ecliptic, equator, springRay, termTicks, solarArc, sun, earthSunRay, moon, moonProjection, latitudeArc, phaseIndicator, labels, labelProjection: projected });
-    return { scene, camera, controls, interactionElement: config.interactionElement, update, render, updateLabelPositions, resetView, setLabelsVisible, dispose };
+    return { scene, camera, controls, interactionElement: config.interactionElement, update, render, updateLabelPositions, resetView, setLabelsVisible, initializeAdvancedLayers, setAdvancedLayer, dispose };
   }
   function vector(THREE, x, y, z) { return new THREE.Vector3(x, y, z); }
   function mesh(THREE, geometry, material, resources) { resources.push(geometry, material); return new THREE.Mesh(geometry, material); }
   function staticLine(THREE, points, material, resources) { const geometry = new THREE.BufferGeometry().setFromPoints(points); resources.push(geometry, material); return new THREE.Line(geometry, material); }
   function dynamicLine(THREE, geometry, color, resources) { const material = new THREE.LineBasicMaterial({ color: color }); resources.push(geometry, material); return new THREE.Line(geometry, material); }
   function circlePoints(THREE, radius, segments) { const points = []; for (let i = 0; i <= segments; i++) { const point = new THREE.Vector3(); setVectorFromLonLat(point, i * 360 / segments, 0, radius); points.push(point); } return points; }
+  function advancedBandPoints(THREE) { const points = []; for (let index = 0; index <= 96; index += 1) { const longitude = index * 360 / 96, latitude = Math.sin(longitude * DEGREE * 2) * 24; const point = new THREE.Vector3(); setVectorFromLonLat(point, longitude, latitude, DISPLAY.sphereRadius + 0.8); points.push(point); } return points; }
   function makeArcGeometry(THREE) { const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((DISPLAY.solarArcSegments + 1) * 3), 3)); return geometry; }
   function setVectorFromLonLat(target, longitudeDeg, latitudeDeg, radius) { const longitude = normalDegrees(longitudeDeg) * DEGREE, latitude = latitudeDeg * DEGREE, horizontal = radius * Math.cos(latitude); target.set(horizontal * Math.cos(longitude), radius * Math.sin(latitude), horizontal * Math.sin(longitude)); }
   function markAttribute(attribute) { attribute.needsUpdate = true; if (Object.prototype.hasOwnProperty.call(attribute, 'needsUpdateCount')) attribute.needsUpdateCount += 1; }
