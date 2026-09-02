@@ -53,7 +53,8 @@
   }
   function ganzhiCardView(ganzhi) {
     const value = ganzhi || {}, springFestival = field(value, ['springFestival', 'name']) || '—', liChun = field(value, ['liChun', 'name']) || '—';
-    return Object.freeze({ title: '两种干支年', rows: Object.freeze([['春节换年', springFestival], ['立春换年', liChun]]), explanation: value.differs ? '春节换年与立春换年采用不同的年界，所以这段时间会显示不同名称；它们服务于不同的历法语境。' : '春节换年与立春换年在当前时刻给出相同名称；两种年界的定义仍然不同。' });
+    const unsupported = !field(value, ['springFestival', 'name']) || !field(value, ['liChun', 'name']) || field(value, ['support', 'ganzhi']) || /支持范围|未计算干支年/.test(value.explanation || '');
+    return Object.freeze({ title: '两种干支年', rows: Object.freeze([['春节换年', springFestival], ['立春换年', liChun]]), explanation: unsupported ? '当地年份不在 1900–2100 支持范围，未计算干支年。' : value.differs ? '春节换年与立春换年采用不同的年界，所以这段时间会显示不同名称；它们服务于不同的历法语境。' : '春节换年与立春换年在当前时刻给出相同名称；两种年界的定义仍然不同。' });
   }
   function observerCardView(state) {
     const observer = state && state.observer || {}, location = observer.location || state && state.location || {}, sun = state && state.sun || {};
@@ -63,7 +64,7 @@
     ]), explanation: '高度角表示太阳离地平线的角度；方位角从正北开始顺时针量。昼长主要由纬度和太阳赤纬决定。' });
   }
   function whyCardView(state) {
-    const input = state || {}, evidence = [], terms = input.solarTerms || {}, moon = input.moon || {}, observer = input.observer || {}, ganzhi = input.ganzhi || {};
+    const input = state || {}, evidence = [], terms = input.solarTerms || input.sun && input.sun.solarTerms || {}, moon = input.moon || {}, observer = input.observer || {}, ganzhi = input.ganzhi || {};
     if (ganzhi.differs) evidence.push('春节换年与立春换年正在给出不同的干支年，因为两者使用不同年界。');
     const untilTerm = terms.millisecondsRemaining != null ? terms.millisecondsRemaining : terms.millisecondsUntilNext;
     if (Number.isFinite(untilTerm) && untilTerm <= 7 * 86400000) evidence.push(`下一节气${terms.next && terms.next.name ? '“' + terms.next.name + '”' : ''}将在${durationText(untilTerm)}后到来，太阳黄经正接近下一个 15° 刻度。`);
@@ -143,7 +144,7 @@
     if (!documentRef.createElementNS || !documentRef.createElement) return null;
     while (container.firstChild) container.removeChild(container.firstChild);
     const toolbar = documentRef.createElement('div'); toolbar.className = 'timeline-toolbar';
-    const tip = documentRef.createElement('output'); tip.className = 'timeline-tooltip'; tip.setAttribute('aria-live', 'polite'); tip.textContent = '将指针悬停或聚焦节气名称查看时刻。';
+    const tip = documentRef.createElement('output'); tip.id = 'annualTimelineTooltip'; tip.className = 'timeline-tooltip'; tip.textContent = '将指针悬停或聚焦节气名称查看时刻。';
     toolbar.appendChild(tip);
     const zoomGroup = documentRef.createElement('div'); zoomGroup.className = 'timeline-zoom'; zoomGroup.setAttribute('aria-label', '时间轴缩放');
     toolbar.appendChild(zoomGroup); container.appendChild(toolbar);
@@ -159,7 +160,7 @@
       row.items.forEach(function (item, index) {
         const start = left + width * clampRatio(item.startRatio), end = left + width * clampRatio(item.endRatio == null ? item.startRatio : item.endRatio);
         if (row.kind === 'solar-terms') {
-          const button = svgNode(documentRef, 'text', { x: start, y: rowY[rowIndex] - (index % 2 ? 14 : -25), class: 'timeline-term', tabindex: 0, role: 'button', 'aria-label': item.name + '，年度位置 ' + Math.round(item.startRatio * 100) + '%' }, item.name);
+          const button = svgNode(documentRef, 'text', { x: start, y: rowY[rowIndex] - (index % 2 ? 14 : -25), class: 'timeline-term', tabindex: 0, role: 'button', 'aria-label': item.name + '，年度位置 ' + Math.round(item.startRatio * 100) + '%', 'aria-describedby': 'annualTimelineTooltip' }, item.name);
           const message = item.name + '：' + new Date(item.instantUtc).toLocaleString('zh-CN', { timeZone: config.timeZone || undefined, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
           function show() { tip.textContent = message; }
           function activate(event) { if (event && (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar')) { if (event.preventDefault) event.preventDefault(); show(); } }
@@ -195,7 +196,7 @@
     const list = documentRef.createElement('dl'); list.className = 'knowledge-card-values';
     (card.rows || []).forEach(function (row) {
       const term = documentRef.createElement('dt'), definition = documentRef.createElement('dd');
-      term.textContent = row[0]; term.title = '天文读数的简短说明见本卡下方。'; definition.textContent = row[1]; definition.setAttribute('aria-live', 'off');
+      term.textContent = row[0]; term.title = '天文读数的简短说明见本卡下方。'; definition.textContent = row[1];
       list.appendChild(term); list.appendChild(definition);
     });
     container.appendChild(list);
@@ -270,7 +271,7 @@
     }
     function renderYearLookup() {
       const input = get('yearLookupInput'), output = get('yearLookupResult'); if (!input || !output) return;
-      const view = yearLookupView(input.value, Calendar); output.textContent = view.message; output.setAttribute && output.setAttribute('aria-live', 'off');
+      const view = yearLookupView(input.value, Calendar); output.textContent = view.message;
       if (input.setAttribute) input.setAttribute('aria-invalid', String(!view.valid));
     }
     function renderKnowledgeCards(worldState) {
@@ -278,7 +279,7 @@
       appendCardRows(get('currentMomentCardBody'), currentMomentCardView(worldState), documentRef);
       appendCardRows(get('solarSeasonCardBody'), solarSeasonCardView(worldState), documentRef);
       appendCardRows(get('calendarMoonCardBody'), calendarMoonCardView(worldState), documentRef);
-      appendCardRows(get('ganzhiCardBody'), ganzhiCardView(worldState && worldState.ganzhi), documentRef);
+      appendCardRows(get('ganzhiCardValues'), ganzhiCardView(worldState && worldState.ganzhi), documentRef);
       appendCardRows(get('observerCardBody'), observerCardView(worldState), documentRef);
       appendCardRows(get('whyCardBody'), whyCardView(worldState), documentRef);
     }

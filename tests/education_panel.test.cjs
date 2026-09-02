@@ -2,15 +2,22 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Education = require('../js/education-panel.js');
 const App = require('../js/app.js');
+const WorldState = require('../js/world-state.js');
 
 function node(value) {
   const listeners = {};
-  return {
-    value: value || '', checked: false, disabled: false, textContent: '', classList: { add() {}, remove() {} },
+  const attributes = {}, children = [];
+  const result = {
+    value: value || '', checked: false, disabled: false, textContent: '', children, classList: { add() {}, remove() {} },
     addEventListener(name, fn) { (listeners[name] ||= []).push(fn); },
     removeEventListener(name, fn) { listeners[name] = (listeners[name] || []).filter((item) => item !== fn); },
-    emit(name, event) { (listeners[name] || []).forEach((fn) => fn(event || { target: this, preventDefault() {} })); }
+    emit(name, event) { (listeners[name] || []).forEach((fn) => fn(event || { target: this, preventDefault() {} })); },
+    setAttribute(key, item) { attributes[key] = String(item); }, getAttribute(key) { return attributes[key]; },
+    appendChild(child) { children.push(child); child.parentNode = this; return child; },
+    removeChild(child) { children.splice(children.indexOf(child), 1); child.parentNode = null; }
   };
+  Object.defineProperty(result, 'firstChild', { get() { return children[0] || null; } });
+  return result;
 }
 
 function renderDocument() {
@@ -37,10 +44,10 @@ function descendants(root) {
 }
 
 function setup() {
-  const ids = ['dateTimeInput', 'previousDayButton', 'todayButton', 'nextDayButton', 'playPauseButton', 'speedSelect', 'timeZoneSelect', 'resolvedTimeZone', 'locationSelect', 'latitudeInput', 'longitudeInput', 'showOrbit', 'showLabels', 'showObserver', 'showDayNight', 'heliocentricSceneBtn', 'geocentricSceneBtn', 'appStatus', 'timelineScroll', 'timelineNotice'];
+  const ids = ['dateTimeInput', 'previousDayButton', 'todayButton', 'nextDayButton', 'playPauseButton', 'speedSelect', 'timeZoneSelect', 'resolvedTimeZone', 'locationSelect', 'latitudeInput', 'longitudeInput', 'showOrbit', 'showLabels', 'showObserver', 'showDayNight', 'heliocentricSceneBtn', 'geocentricSceneBtn', 'appStatus', 'timelineScroll', 'timelineNotice', 'currentMomentCardBody', 'solarSeasonCardBody', 'calendarMoonCardBody', 'ganzhiCardBody', 'ganzhiCardValues', 'observerCardBody', 'whyCardBody', 'yearLookupInput', 'yearLookupResult', 'sixtyYearRingToggle', 'sixtyYearRing'];
   const nodes = Object.fromEntries(ids.map((id) => [id, node()]));
   nodes.speedSelect.value = '7'; nodes.timeZoneSelect.value = 'Asia/Shanghai'; nodes.locationSelect.value = 'beijing';
-  const document = Object.assign(node(), { getElementById: (id) => nodes[id] || null });
+  const document = Object.assign(node(), { getElementById: (id) => nodes[id] || null, createElement: () => node(), createElementNS: () => node() });
   let state = { instantUtc: 0, timeZone: 'Asia/Shanghai', location: { name: '北京', latitudeDeg: 39.9042, longitudeDeg: 116.4074 }, playing: false, daysPerSecond: 7 };
   const calls = [];
   const clock = {
@@ -88,6 +95,34 @@ test('why card chooses current evidence instead of static copy', () => {
 test('year lookup is anchored to 甲子 cycle', () => {
   assert.equal(Education.yearLookupView(1984).ganzhi, '甲子');
   assert.equal(Education.yearLookupView(2044).ganzhi, '甲子');
+});
+
+test('card refresh preserves year query controls and keeps the clock unchanged', () => {
+  const s = setup(); s.Calendar.ganzhiForYear = (year) => ({ name: year === 1984 ? '甲子' : '乙丑', index: 0 });
+  const panel = Education.create({ root: s.document, clock: s.clock, Calendar: s.Calendar, Observer: s.Observer });
+  const state = { instantUtc: Date.UTC(2026, 0, 30), displayTime: { year: 2026, month: 1, day: 30, timeZone: 'Asia/Shanghai' }, solarTerms: {}, ganzhi: { springFestival: { name: '乙巳' }, liChun: { name: '乙巳' }, differs: false }, sun: {}, moon: {}, observer: {} };
+  panel.update(s.clock.getState(), state); const input = s.nodes.yearLookupInput;
+  input.value = '1984'; input.emit('change'); assert.match(s.nodes.yearLookupResult.textContent, /甲子/);
+  panel.update(s.clock.getState(), state); assert.strictEqual(s.nodes.yearLookupInput, input);
+  input.value = '1800'; input.emit('change'); assert.match(s.nodes.yearLookupResult.textContent, /1900/);
+  assert.equal(s.calls.some((call) => call[0] === 'setInstant'), false);
+  s.nodes.sixtyYearRingToggle.emit('click'); assert.equal(s.nodes.sixtyYearRing.children.length, 1);
+  s.nodes.sixtyYearRingToggle.emit('click'); assert.equal(s.nodes.sixtyYearRing.children.length, 0);
+  panel.dispose();
+});
+
+test('why card reads solar terms from a real WorldState-shaped sun object', () => {
+  const state = WorldState.create({ instantUtc: Date.UTC(2026, 0, 30, 4), timeZone: 'Asia/Shanghai' });
+  assert.ok(state.sun.solarTerms.millisecondsRemaining < 7 * 86400000);
+  const card = Education.whyCardView(state);
+  assert.match(card.body, new RegExp(state.sun.solarTerms.next.name)); assert.equal(card.body.split('。').filter(Boolean).length, 2);
+});
+
+test('Ganzhi card marks unsupported years neutrally', () => {
+  const state = WorldState.create({ instantUtc: Date.UTC(1800, 0, 1), timeZone: 'Asia/Shanghai' });
+  const card = Education.ganzhiCardView(Object.assign({}, state.ganzhi, { support: state.support }));
+  assert.match(card.explanation, /不在 1900–2100 支持范围，未计算干支年/);
+  assert.doesNotMatch(card.explanation, /相同/);
 });
 
 test('boundary changes cover term, lunar phase, spring festival, and Li Chun without duplicates', () => {
@@ -152,6 +187,8 @@ test('rendered term controls remain focusable and share one hover/focus tooltip 
   assert.equal(svg.getAttribute('role'), 'group');
   assert.equal(term.getAttribute('role'), 'button');
   assert.equal(term.getAttribute('tabindex'), '0');
+  assert.equal(tooltip.getAttribute('aria-live'), undefined);
+  assert.equal(term.getAttribute('aria-describedby'), 'annualTimelineTooltip');
   assert.match(term.getAttribute('aria-label'), /立春/);
   term.emit('mouseenter'); const hover = tooltip.textContent;
   tooltip.textContent = ''; term.emit('focus'); assert.equal(tooltip.textContent, hover);

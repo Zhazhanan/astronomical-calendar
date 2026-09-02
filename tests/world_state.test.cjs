@@ -67,6 +67,23 @@ test('full world state contains one synchronized calendar and observer result', 
   assert.equal(state.timeZone, 'Asia/Shanghai');
 });
 
+test('WorldState provides a frozen conservative daylight trend from neighboring local days', () => {
+  const location = { name: '北京', latitudeDeg: 39.9042, longitudeDeg: 116.4074 };
+  const winter = WorldState.create({ instantUtc: Date.UTC(2026, 0, 15, 4), timeZone: 'Asia/Shanghai', location });
+  const summer = WorldState.create({ instantUtc: Date.UTC(2026, 6, 15, 4), timeZone: 'Asia/Shanghai', location });
+  const solstice = WorldState.create({ instantUtc: Date.UTC(2026, 5, 21, 4), timeZone: 'Asia/Shanghai', location });
+  assert.equal(winter.observer.daylightTrend, 'increasing');
+  assert.equal(summer.observer.daylightTrend, 'decreasing');
+  assert.equal(solstice.observer.daylightTrend, 'stable');
+  assert.equal(Object.isFrozen(solstice.observer), true);
+});
+
+test('WorldState carries the supported-range Ganzhi warning for historical dates', () => {
+  const state = WorldState.create({ instantUtc: Date.UTC(1800, 0, 1), timeZone: 'Asia/Shanghai' });
+  assert.equal(state.ganzhi.springFestival, null);
+  assert.equal(state.support.ganzhi.code, 'GANZHI_YEAR_OUT_OF_RANGE');
+});
+
 test('timezone changes local calendar fields while location remains independent', () => {
   const instantUtc = Date.UTC(2026, 0, 1, 0, 30);
   const beijing = { name: '北京', latitudeDeg: 39.9042, longitudeDeg: 116.4074 };

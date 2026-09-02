@@ -82,6 +82,29 @@
     }
   }
 
+  function adjacentLocalInstant(displayTime, timeZone, direction, Calendar, fallbackInstant) {
+    if (typeof Calendar.zonedLocalDateTimeToUtc !== 'function' || !displayTime) return fallbackInstant + direction * 86400000;
+    const date = new Date(Date.UTC(displayTime.year, displayTime.month - 1, displayTime.day + direction));
+    const result = Calendar.zonedLocalDateTimeToUtc({
+      year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate(),
+      hour: displayTime.hour || 0, minute: displayTime.minute || 0, second: displayTime.second || 0
+    }, timeZone);
+    return result && Number.isFinite(result.instantUtc) ? result.instantUtc : fallbackInstant + direction * 86400000;
+  }
+
+  function daylightTrend(instantUtc, displayTime, timeZone, location, dependencies) {
+    const previousInstant = adjacentLocalInstant(displayTime, timeZone, -1, dependencies.Calendar, instantUtc);
+    const nextInstant = adjacentLocalInstant(displayTime, timeZone, 1, dependencies.Calendar, instantUtc);
+    const previousSun = dependencies.Astronomy.solarGeocentricState(previousInstant);
+    const nextSun = dependencies.Astronomy.solarGeocentricState(nextInstant);
+    const previous = dependencies.Observer.observerState(Object.assign({ instantUtc: previousInstant }, location, { sun: previousSun }));
+    const next = dependencies.Observer.observerState(Object.assign({ instantUtc: nextInstant }, location, { sun: nextSun }));
+    const changeHours = next.daylightHours - previous.daylightHours;
+    // Thirty seconds across two local days is deliberately treated as stable near solstices and polar plateaus.
+    if (!Number.isFinite(changeHours) || Math.abs(changeHours) <= 1 / 120) return 'stable';
+    return changeHours > 0 ? 'increasing' : 'decreasing';
+  }
+
   function annualCacheFor(Astronomy, Calendar, lunarApi) {
     let calendarCache = annualTimelineCache.get(Astronomy);
     if (!calendarCache) {
@@ -138,12 +161,15 @@
     });
     const sunBase = dependencies.Astronomy.solarGeocentricState(instantUtc);
     const moonState = dependencies.Astronomy.moonGeocentricState(instantUtc, sunBase);
-    const observer = dependencies.Observer.observerState({
+    const observerBase = dependencies.Observer.observerState({
       instantUtc,
       name: location && location.name,
       latitudeDeg: location && location.latitudeDeg,
       longitudeDeg: location && location.longitudeDeg,
       sun: sunBase
+    });
+    const observer = Object.assign({}, observerBase, {
+      daylightTrend: daylightTrend(instantUtc, calendar.displayTime, calendar.displayTime.timeZone, observerBase.location, dependencies)
     });
     const moon = Object.assign({
       positionKm: moonState.vectorKm,

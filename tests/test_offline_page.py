@@ -78,6 +78,7 @@ class OfflinePageControlsTest(unittest.TestCase):
 
     def test_exposes_accessible_learning_controls_and_offline_resources(self):
         self.assertEqual(self.html.count('aria-live="polite"'), 1)
+        self.assertEqual(len(re.findall(r'aria-live=', self.html)), 1)
         for element_id in ('todayButton', 'previousDayButton', 'nextDayButton', 'playPauseButton'):
             self.assertEqual(self.parser.elements[element_id][1].get('type'), 'button')
         self.assertRegex(self.html, r'<select id="speedSelect"[^>]*>.*value="1".*value="7".*value="30"')
