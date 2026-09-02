@@ -221,8 +221,10 @@
     const onRenderRequested = typeof config.onRenderRequested === 'function' ? config.onRenderRequested : function () {};
     const onSelectedScene = typeof config.onSelectedScene === 'function' ? config.onSelectedScene : function () {};
     const onLayerChange = typeof config.onLayerChange === 'function' ? config.onLayerChange : function () {};
+    const onAdvancedLayer = typeof config.onAdvancedLayer === 'function' ? config.onAdvancedLayer : function () { return false; };
+    const StarCatalog = config.StarCatalog || {};
     const listeners = [], nodes = {};
-    let previous = null, highlightTimer = null, disposed = false, lastStatus = null, timelineKey = null, timelineAnnual = null, renderedTimeline = null;
+    let previous = null, highlightTimer = null, disposed = false, lastStatus = null, timelineKey = null, timelineAnnual = null, renderedTimeline = null, advancedInitialized = false, catalogReader = null;
     function get(id) { return nodes[id] || (nodes[id] = root.getElementById(id)); }
     function listen(id, type, fn) { const target = get(id); if (target && target.addEventListener) { target.addEventListener(type, fn); listeners.push([target, type, fn]); } }
     function status(message) { if (message === lastStatus) return; lastStatus = message; const target = get('appStatus'); if (target) target.textContent = message || ''; }
@@ -251,6 +253,48 @@
       if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) { status('经度必须是 -180° 到 180° 的有限数值。'); return; }
       clock.setLocation({ name: '自定义地点', latitudeDeg: latitude, longitudeDeg: longitude }); status('');
     }
+    function advancedStatus(message) { const output = get('advancedCatalogStatus'); if (output) output.textContent = message || ''; }
+    function advancedSummary(result) {
+      const target = get('advancedCatalogSummary'); if (!target) return;
+      while (target.firstChild) target.removeChild(target.firstChild);
+      const text = root.createElement('p'); text.textContent = `已接受 ${result.acceptedRows} 条，跳过 ${result.skippedRows} 条。`;
+      target.appendChild(text);
+      if (result.stars.length) {
+        const list = root.createElement('ul');
+        result.stars.slice(0, 8).forEach(function (star) { const item = root.createElement('li'); item.textContent = `${star.name}：RA ${star.raDeg.toFixed(3)}°，Dec ${star.decDeg.toFixed(3)}°`; list.appendChild(item); });
+        target.appendChild(list);
+      }
+    }
+    function initializeAdvanced() {
+      if (advancedInitialized) return;
+      advancedInitialized = true;
+      if (!onAdvancedLayer('initialize', true)) advancedStatus('三维场景不可用；仍可在本地读取、验证和查看 CSV 摘要。');
+    }
+    function toggleAdvanced(id) { initializeAdvanced(); onAdvancedLayer(id, !!(get(id) && get(id).checked)); onRenderRequested(); }
+    function readCatalogFile() {
+      const input = get('advancedCatalogInput'), file = input && input.files && input.files[0];
+      if (!file || !StarCatalog.validateFile || !StarCatalog.parseCsv) return;
+      try { StarCatalog.validateFile(file); }
+      catch (error) { advancedStatus(error.message); return; }
+      const Reader = config.FileReader || (typeof FileReader !== 'undefined' ? FileReader : null);
+      if (!Reader) { advancedStatus('当前浏览器无法读取本地文件；未上传或发送任何数据。'); return; }
+      if (catalogReader && typeof catalogReader.abort === 'function') catalogReader.abort();
+      catalogReader = new Reader(); advancedStatus('正在只在本地读取 CSV…');
+      catalogReader.onerror = function () { advancedStatus('本地 CSV 读取失败；文件没有离开此设备。'); catalogReader = null; };
+      catalogReader.onabort = function () { catalogReader = null; };
+      catalogReader.onload = function () {
+        try {
+          const unit = get('advancedRaUnit') && get('advancedRaUnit').value;
+          const result = StarCatalog.parseCsv(String(catalogReader.result || ''), { raUnit: unit });
+          if (result.fatalErrors.length) { advancedStatus(result.fatalErrors.join(' ')); return; }
+          advancedSummary(result); advancedStatus(`本地导入完成：${result.acceptedRows} 条可用，${result.skippedRows} 条已跳过。`);
+          if (!onAdvancedLayer('starCatalog', result.stars)) advancedStatus(`本地导入完成：${result.acceptedRows} 条可用，${result.skippedRows} 条已跳过。三维场景不可用，显示摘要。`);
+          onRenderRequested();
+        } catch (error) { advancedStatus('CSV 解析失败：' + (error && error.message || '未知错误')); }
+        finally { catalogReader = null; }
+      };
+      catalogReader.readAsText(file, 'utf-8');
+    }
     function bind() {
       listen('dateTimeInput', 'change', applyDateTime); listen('previousDayButton', 'click', () => clock.stepDays(-1)); listen('nextDayButton', 'click', () => clock.stepDays(1)); listen('todayButton', 'click', () => clock.setInstant(now()));
       listen('playPauseButton', 'click', () => clock.getState().playing ? clock.pause() : clock.play());
@@ -259,6 +303,10 @@
       listen('locationSelect', 'change', () => { const value = get('locationSelect').value; updateLocationInputs(clock.getState().location); if (value === 'custom') return; const location = presetLocation(value); if (location) clock.setLocation(location); });
       listen('latitudeInput', 'change', applyCustomLocation); listen('longitudeInput', 'change', applyCustomLocation);
       LAYER_IDS.forEach((id) => listen(id, 'change', () => onLayerChange(id, !!get(id).checked)));
+      listen('advancedAstronomy', 'toggle', function () { if (get('advancedAstronomy').open) initializeAdvanced(); });
+      listen('advancedMilkyWay', 'change', function () { toggleAdvanced('advancedMilkyWay'); });
+      listen('advancedMansions', 'change', function () { toggleAdvanced('advancedMansions'); });
+      listen('advancedCatalogInput', 'change', readCatalogFile);
       listen('heliocentricSceneBtn', 'click', () => onSelectedScene('heliocentric')); listen('geocentricSceneBtn', 'click', () => onSelectedScene('geocentric'));
       listen('yearLookupInput', 'change', function () { renderYearLookup(); });
       listen('sixtyYearRingToggle', 'click', function () {
@@ -317,7 +365,7 @@
       onRenderRequested();
     }
     bind();
-    return Object.freeze({ update, dispose: function () { if (disposed) return; disposed = true; if (highlightTimer) timers.clearTimeout(highlightTimer); listeners.splice(0).forEach((item) => item[0].removeEventListener(item[1], item[2])); } });
+    return Object.freeze({ update, dispose: function () { if (disposed) return; disposed = true; if (catalogReader && typeof catalogReader.abort === 'function') catalogReader.abort(); if (highlightTimer) timers.clearTimeout(highlightTimer); listeners.splice(0).forEach((item) => item[0].removeEventListener(item[1], item[2])); } });
   }
   return Object.freeze({ controlViewModel, boundaryChanges, timelineViewModel, lunarSegmentView, timelineScrubController, renderTimeline, currentMomentCardView, solarSeasonCardView, calendarMoonCardView, ganzhiCardView, observerCardView, whyCardView, yearLookupView, create });
 });

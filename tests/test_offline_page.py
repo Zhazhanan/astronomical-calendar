@@ -105,6 +105,13 @@ class OfflinePageControlsTest(unittest.TestCase):
             self.assertRegex(attributes, r'data-card="[a-z-]+"')
             self.assertRegex(content, r'<div id="[a-zA-Z]+CardBody" class="knowledge-card-body">')
 
+    def test_advanced_astronomy_uses_local_csv_only(self):
+        self.assertNotIn('id="fetchStarsBtn"', self.html)
+        self.assertNotIn('fetch(', self.html)
+        self.assertIn('accept=".csv,text/csv"', self.html)
+        self.assertIn('js/star-catalog.js', self.html)
+        self.assertIn('传统星官示意', self.html)
+
 
 if __name__ == "__main__":
     unittest.main()
