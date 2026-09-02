@@ -8,12 +8,35 @@ class ElementIdParser(HTMLParser):
     def __init__(self):
         super().__init__()
         self.elements = {}
+        self.id_counts = {}
+        self.form_controls = []
+        self.headings = []
+        self.open_elements = []
+        self.alert_depths = []
 
     def handle_starttag(self, tag, attrs):
         attributes = dict(attrs)
         element_id = attributes.get("id")
         if element_id:
             self.elements[element_id] = (tag, attributes)
+            self.id_counts[element_id] = self.id_counts.get(element_id, 0) + 1
+        if tag in ("input", "select", "textarea"):
+            self.form_controls.append((tag, attributes, any(parent_tag == "label" for parent_tag, _ in self.open_elements)))
+        if re.fullmatch(r"h[1-6]", tag):
+            self.headings.append(int(tag[1]))
+        if attributes.get("role") == "alert":
+            self.alert_depths.append(sum(1 for _, parent_attrs in self.open_elements if parent_attrs.get("role") == "alert"))
+        self.open_elements.append((tag, attributes))
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
+
+    def handle_endtag(self, tag):
+        for index in range(len(self.open_elements) - 1, -1, -1):
+            if self.open_elements[index][0] == tag:
+                del self.open_elements[index:]
+                return
 
 
 class OfflinePageControlsTest(unittest.TestCase):
@@ -95,6 +118,44 @@ class OfflinePageControlsTest(unittest.TestCase):
         self.assertNotRegex(self.html, r'<(?:script|link)[^>]+https?://')
         self.assertNotIn('<style', self.html)
         self.assertNotIn('style="', self.html)
+
+    def test_static_accessibility_basics_are_kept_in_the_source_markup(self):
+        self.assertTrue(self.parser.id_counts)
+        self.assertTrue(all(count == 1 for count in self.parser.id_counts.values()))
+        self.assertEqual(self.parser.headings[0], 1)
+        self.assertTrue(all(next_level <= level + 1 for level, next_level in zip(self.parser.headings, self.parser.headings[1:])))
+        for tag, attributes, is_wrapped_by_label in self.parser.form_controls:
+            self.assertTrue(
+                is_wrapped_by_label or attributes.get("aria-label") or attributes.get("aria-labelledby"),
+                f"{tag}#{attributes.get('id', '(no id)')} needs a label or accessible name"
+            )
+        self.assertNotRegex(self.html, r'tabindex\s*=\s*["\']?[1-9]')
+        self.assertEqual(self.html.count('aria-live="polite"'), 1)
+        self.assertEqual(len(self.parser.alert_depths), 0)
+        self.assertFalse(any(depth > 0 for depth in self.parser.alert_depths))
+
+    def test_runtime_timeline_range_has_an_accessible_name(self):
+        panel_script = (Path(__file__).parents[1] / "js" / "education-panel.js").read_text(encoding="utf-8")
+        self.assertRegex(panel_script, r"scrub\.type\s*=\s*['\"]range['\"]")
+        self.assertRegex(panel_script, r"scrub\.setAttribute\(\s*['\"]aria-label['\"]")
+
+    def test_scene_switcher_currently_uses_pressed_buttons_not_tab_semantics(self):
+        # This records the present markup precisely. A functional follow-up must add
+        # role=tab, aria-controls and aria-selected before it can be called a tablist.
+        tabs = self.parser.elements["sceneTabs"]
+        self.assertEqual(tabs[0], "nav")
+        self.assertNotEqual(tabs[1].get("role"), "tablist")
+        for element_id in ("heliocentricSceneBtn", "geocentricSceneBtn"):
+            attributes = self.parser.elements[element_id][1]
+            self.assertEqual(attributes.get("aria-pressed"), "true" if element_id.startswith("heliocentric") else "false")
+            self.assertNotIn("aria-controls", attributes)
+            self.assertNotIn("aria-selected", attributes)
+
+    def test_reduced_motion_and_runtime_resource_rules_are_static(self):
+        stylesheet = (Path(__file__).parents[1] / "styles" / "astronomy-education.css").read_text(encoding="utf-8")
+        self.assertIn("@media (prefers-reduced-motion:reduce)", stylesheet)
+        self.assertNotRegex(self.html, r'<(?:script|link)\b[^>]+(?:src|href)=["\']https?://')
+        self.assertNotRegex(self.html, r'<(?:script|link)\b[^>]+(?:src|href)=["\']data:')
 
     def test_knowledge_cards_are_keyboard_collapsible_with_stable_bodies(self):
         cards = re.findall(r'<details class="knowledge-card"([^>]*)>(.*?)</details>', self.html, re.S)
