@@ -14,7 +14,7 @@ function node(value) {
 }
 
 function setup() {
-  const ids = ['dateTimeInput', 'previousDayButton', 'todayButton', 'nextDayButton', 'playPauseButton', 'speedSelect', 'timeZoneSelect', 'resolvedTimeZone', 'locationSelect', 'latitudeInput', 'longitudeInput', 'showOrbit', 'showLabels', 'showObserver', 'showDayNight', 'heliocentricSceneBtn', 'geocentricSceneBtn', 'appStatus'];
+  const ids = ['dateTimeInput', 'previousDayButton', 'todayButton', 'nextDayButton', 'playPauseButton', 'speedSelect', 'timeZoneSelect', 'resolvedTimeZone', 'locationSelect', 'latitudeInput', 'longitudeInput', 'showOrbit', 'showLabels', 'showObserver', 'showDayNight', 'heliocentricSceneBtn', 'geocentricSceneBtn', 'appStatus', 'timelineScroll', 'timelineNotice'];
   const nodes = Object.fromEntries(ids.map((id) => [id, node()]));
   nodes.speedSelect.value = '7'; nodes.timeZoneSelect.value = 'Asia/Shanghai'; nodes.locationSelect.value = 'beijing';
   const document = Object.assign(node(), { getElementById: (id) => nodes[id] || null });
@@ -47,6 +47,50 @@ test('boundary changes cover term, lunar phase, spring festival, and Li Chun wit
   assert.deepEqual(Education.boundaryChanges(previous, next), ['solar-term', 'full-moon', 'spring-festival', 'li-chun']);
 });
 
+test('timeline model aligns all rows and current pointer to one scale', () => {
+  const annual = {
+    startUtc: 0,
+    endUtc: 1000,
+    gregorian: [{ label: '1月', startRatio: 0, endRatio: 0.1 }],
+    solarTerms: [{ name: '立春', startRatio: 0.2 }],
+    lunarMonths: [{ label: '正月', startRatio: 0.15, endRatio: 0.24, isLeapMonth: false }]
+  };
+  const model = Education.timelineViewModel(annual, 250);
+  assert.equal(model.pointerRatio, 0.25);
+  assert.equal(model.rows[0].kind, 'gregorian');
+  assert.equal(model.rows[1].kind, 'solar-terms');
+  assert.equal(model.rows[2].kind, 'lunar');
+});
+
+test('leap lunar month has both text and pattern encoding', () => {
+  const segment = Education.lunarSegmentView({ label: '闰六月', isLeapMonth: true });
+  assert.equal(segment.ariaLabel, '农历闰六月');
+  assert.equal(segment.pattern, 'diagonal');
+});
+
+test('timeline scrub commands use the shared clock and preserve local-year boundaries', () => {
+  const calls = [];
+  const scrub = Education.timelineScrubController({
+    clock: { stepDays: (days) => calls.push(['stepDays', days]), setInstant: (instant) => calls.push(['setInstant', instant]) },
+    annual: { startUtc: 100, endUtc: 900 }
+  });
+  scrub.keydown({ key: 'ArrowRight', preventDefault() {} });
+  scrub.keydown({ key: 'PageUp', preventDefault() {} });
+  scrub.keydown({ key: 'Home', preventDefault() {} });
+  scrub.keydown({ key: 'End', preventDefault() {} });
+  assert.deepEqual(calls, [['stepDays', 1], ['stepDays', 7], ['setInstant', 100], ['setInstant', 899]]);
+});
+
+test('timeline data is requested once per selected local year and timezone, not per tick', () => {
+  const s = setup(), requested = [], annual = { startUtc: 0, endUtc: 1000, gregorian: [], solarTerms: [], lunarMonths: [] };
+  const panel = Education.create({ root: s.document, clock: s.clock, Calendar: s.Calendar, Observer: s.Observer, getAnnualTimeline: (year, zone) => { requested.push([year, zone]); return annual; } });
+  const state = { instantUtc: 100, displayTime: { year: 2026, month: 1, day: 1, timeZone: 'Asia/Shanghai' } };
+  panel.update(s.clock.getState(), state); panel.update(s.clock.getState(), Object.assign({}, state, { instantUtc: 200 }));
+  panel.update(s.clock.getState(), { instantUtc: 300, displayTime: { year: 2027, month: 1, day: 1, timeZone: 'Asia/Shanghai' } });
+  assert.deepEqual(requested, [[2026, 'Asia/Shanghai'], [2027, 'Asia/Shanghai']]);
+  panel.dispose();
+});
+
 test('bindings change only the requested clock field and reject invalid custom locations', () => {
   const s = setup();
   const panel = Education.create({ root: s.document, clock: s.clock, Calendar: s.Calendar, Observer: s.Observer, now: () => 999, onSelectedScene: (id) => s.calls.push(['scene', id]) });
@@ -77,10 +121,11 @@ test('app supplies one shared WorldState to the panel and SceneHost without dire
   const clock = Object.assign({}, s.clock, { getState: () => state, subscribe: (fn) => { subscriber = fn; return () => {}; } });
   const host = { available: true, renderFrame: (world) => renders.push(world), dispose() {}, setLayoutMode() {}, setSelectedScene() {} };
   const panel = { update: (clockState, world) => updates.push([clockState, world]), dispose() {} };
-  const education = { TimeController: { create: () => clock }, WorldState: { create: (input) => { creates += 1; return { ...input, displayTime: {}, sun: { longitudeDeg: 0 }, solarTerms: {} }; } }, SceneHost: { create: () => host }, HeliocentricScene: {}, GeocentricScene: {} };
+  let panelOptions;
+  const education = { TimeController: { create: () => clock }, WorldState: { create: (input) => { creates += 1; return { ...input, displayTime: {}, sun: { longitudeDeg: 0 }, solarTerms: {} }; }, annualTimeline: (year, zone) => ({ year, zone }) }, EducationPanel: { create: (options) => { panelOptions = options; return panel; } }, SceneHost: { create: () => host }, HeliocentricScene: {}, GeocentricScene: {} };
   const window = { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), requestAnimationFrame: () => 1, cancelAnimationFrame() {} };
-  const handle = App.start({ AstroEducation: education, document: s.document, window, THREE: {}, timeController: clock, scenes: { heliocentric: { controls: node(), update() {} }, geocentric: { controls: node(), update() {} } }, host, educationPanel: panel });
-  assert.equal(creates, 1); assert.strictEqual(updates[0][1], renders[0]);
+  const handle = App.start({ AstroEducation: education, document: s.document, window, THREE: {}, timeController: clock, scenes: { heliocentric: { controls: node(), update() {} }, geocentric: { controls: node(), update() {} } }, host });
+  assert.equal(creates, 1); assert.strictEqual(updates[0][1], renders[0]); assert.deepEqual(panelOptions.getAnnualTimeline(2026, 'Asia/Shanghai'), { year: 2026, zone: 'Asia/Shanghai' });
   subscriber({ ...state, instantUtc: 1 });
   assert.equal(creates, 2); assert.strictEqual(updates[1][1], renders[1]); handle.stop();
 });
