@@ -139,17 +139,22 @@ class OfflinePageControlsTest(unittest.TestCase):
         self.assertRegex(panel_script, r"scrub\.type\s*=\s*['\"]range['\"]")
         self.assertRegex(panel_script, r"scrub\.setAttribute\(\s*['\"]aria-label['\"]")
 
-    def test_scene_switcher_currently_uses_pressed_buttons_not_tab_semantics(self):
-        # This records the present markup precisely. A functional follow-up must add
-        # role=tab, aria-controls and aria-selected before it can be called a tablist.
+    def test_scene_switcher_uses_standard_tab_semantics(self):
         tabs = self.parser.elements["sceneTabs"]
         self.assertEqual(tabs[0], "nav")
-        self.assertNotEqual(tabs[1].get("role"), "tablist")
-        for element_id in ("heliocentricSceneBtn", "geocentricSceneBtn"):
+        self.assertEqual(tabs[1].get("role"), "tablist")
+        expected = {
+            "heliocentricSceneBtn": ("heliocentricViewport", "true"),
+            "geocentricSceneBtn": ("geocentricViewport", "false"),
+        }
+        for element_id, (controlled_id, selected) in expected.items():
             attributes = self.parser.elements[element_id][1]
-            self.assertEqual(attributes.get("aria-pressed"), "true" if element_id.startswith("heliocentric") else "false")
-            self.assertNotIn("aria-controls", attributes)
-            self.assertNotIn("aria-selected", attributes)
+            self.assertEqual(attributes.get("role"), "tab")
+            self.assertEqual(attributes.get("aria-controls"), controlled_id)
+            self.assertEqual(attributes.get("aria-selected"), selected)
+            viewport = self.parser.elements[controlled_id][1]
+            self.assertEqual(viewport.get("role"), "tabpanel")
+            self.assertEqual(viewport.get("aria-labelledby"), element_id)
 
     def test_reduced_motion_and_runtime_resource_rules_are_static(self):
         stylesheet = (Path(__file__).parents[1] / "styles" / "astronomy-education.css").read_text(encoding="utf-8")
