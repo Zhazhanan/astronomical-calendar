@@ -5,19 +5,20 @@
     const config = options || {}, root = config.root || globalThis, education = config.AstroEducation || root.AstroEducation || {}, documentRef = config.document || root.document, windowRef = config.window || root.window || root;
     if (!documentRef || !documentRef.getElementById || !education.TimeController || !education.WorldState) return fail(documentRef, '教学数据不可用：缺少 TimeController 或 WorldState');
     const timeController = config.timeController || education.TimeController.create({ instantUtc: Date.now(), timeZone: 'Asia/Shanghai', location: { name: '北京', latitudeDeg: 39.9042, longitudeDeg: 116.4074 } });
-    let host = null, scenes = null, currentState = null, lastGoodState = null, educationPanel = null, requestId = null, stopped = false, hiddenWasPlaying = false, contextWasPlaying = false, contextLost = false, previousFrameTime = null, redrawRequested = false, fallbackCode = null;
+    let host = null, scenes = null, currentState = null, lastGoodState = null, educationPanel = null, requestId = null, stopped = false, hiddenWasPlaying = false, contextWasPlaying = false, contextLost = false, previousFrameTime = null, redrawRequested = false, fallbackCode = null, currentFault = null;
     const advancedLayers = { initialized: false, advancedMilkyWay: false, advancedMansions: false, starCatalog: null };
     const listeners = [], controlListeners = [], raf = windowRef.requestAnimationFrame && windowRef.requestAnimationFrame.bind(windowRef), caf = windowRef.cancelAnimationFrame && windowRef.cancelAnimationFrame.bind(windowRef);
     const reducedMotion = !!(windowRef.matchMedia && windowRef.matchMedia('(prefers-reduced-motion: reduce)').matches);
     function listen(target, name, fn) { if (target && target.addEventListener) { target.addEventListener(name, fn); listeners.push([target, name, fn]); } }
     function listenControl(target, name, fn) { if (target && target.addEventListener) { target.addEventListener(name, fn); controlListeners.push([target, name, fn]); } }
     function clearControlListeners() { controlListeners.splice(0).forEach(function (listener) { listener[0].removeEventListener(listener[1], listener[2]); }); }
-    function report(code, message) { const value = code ? `${code}：${message}` : message; if (value === fallbackCode) return; fallbackCode = value; setStatus(documentRef, value); }
+    function report(code, message) { const value = code ? `${code}：${message}` : message; if (value === fallbackCode) return; fallbackCode = value; if (code) currentFault = code; setStatus(documentRef, value); }
+    function recover(code) { if (currentFault !== code) return; currentFault = null; fallbackCode = null; setStatus(documentRef, ''); }
     function setFallback(code, retryAvailable) { if (educationPanel && educationPanel.setFallback && currentState) educationPanel.setFallback(currentState, code, retryAvailable); report(code, '此设备无法显示 3D 场景，下面仍可学习日期、节气与月相。'); }
     function clearFallback() { if (educationPanel && educationPanel.clearFallback) educationPanel.clearFallback(); fallbackCode = null; }
     function renderThree() { if (!host || !currentState) return; try { host.renderFrame(currentState); } catch (_) { if (host && host.dispose) host.dispose(); host = null; setFallback('THREE_RENDER_FAILED', true); } }
     function applyControllerState(state) {
-      try { currentState = education.WorldState.create({ instantUtc: state.instantUtc, timeZone: state.timeZone, location: state.location }); lastGoodState = currentState; }
+      try { currentState = education.WorldState.create({ instantUtc: state.instantUtc, timeZone: state.timeZone, location: state.location }); lastGoodState = currentState; recover('COMPUTATION_FAILED'); }
       catch (_) { if (timeController.getState().playing) timeController.pause(); currentState = lastGoodState; report('COMPUTATION_FAILED', '教学数据暂时不可用；保留上一份学习信息。'); return; }
       updateHud(documentRef, currentState);
       if (educationPanel) { try { educationPanel.update(state, currentState); } catch (_) { report('TIMELINE_RENDER_FAILED', '时间轴暂时不可用；卡片和时间控件仍可使用。'); } }
@@ -42,15 +43,24 @@
       applyAdvancedLayer('advancedMansions', advancedLayers.advancedMansions);
       if (advancedLayers.starCatalog) applyAdvancedLayer('starCatalog', advancedLayers.starCatalog);
     }
-    educationPanel = config.educationPanel || (education.EducationPanel && education.EducationPanel.create ? education.EducationPanel.create({ root: documentRef, clock: timeController, Calendar: education.Calendar, Observer: education.Observer, StarCatalog: education.StarCatalog, FileReader: config.FileReader, getAnnualTimeline: typeof education.WorldState.annualTimeline === 'function' ? function (year, timeZone) { return education.WorldState.annualTimeline(year, timeZone); } : null, onRenderRequested: requestRedraw, onSelectedScene: function (id) { if (host) { host.setSelectedScene(id); updateSceneButtons(documentRef, id); requestRedraw(); } }, onLayerChange: function (id, visible) { if (!scenes) return; Object.keys(scenes).forEach(function (sceneId) { const scene = scenes[sceneId]; if (scene && typeof scene.setLayerVisibility === 'function') scene.setLayerVisibility(id, visible); }); requestRedraw(); }, onAdvancedLayer: applyAdvancedLayer, onRetry3d: function () { retry3d(); }, onError: function (code) { report(code, code === 'ADVANCED_CSV_FAILED' ? '本地 CSV 暂时不可用；主要学习内容仍可使用。' : '时间轴暂时不可用；卡片和时间控件仍可使用。'); } }) : null);
+    educationPanel = config.educationPanel || (education.EducationPanel && education.EducationPanel.create ? education.EducationPanel.create({ root: documentRef, clock: timeController, Calendar: education.Calendar, Observer: education.Observer, StarCatalog: education.StarCatalog, FileReader: config.FileReader, getAnnualTimeline: typeof education.WorldState.annualTimeline === 'function' ? function (year, timeZone) { return education.WorldState.annualTimeline(year, timeZone); } : null, onRenderRequested: requestRedraw, onSelectedScene: function (id) { if (host) { host.setSelectedScene(id); updateSceneButtons(documentRef, id); requestRedraw(); } }, onLayerChange: function (id, visible) { if (!scenes) return; Object.keys(scenes).forEach(function (sceneId) { const scene = scenes[sceneId]; if (scene && typeof scene.setLayerVisibility === 'function') scene.setLayerVisibility(id, visible); }); requestRedraw(); }, onAdvancedLayer: applyAdvancedLayer, onRetry3d: function () { retry3d(); }, onError: function (code) { report(code, code === 'ADVANCED_CSV_FAILED' ? '本地 CSV 暂时不可用；主要学习内容仍可使用。' : '时间轴暂时不可用；卡片和时间控件仍可使用。'); }, onRecovered: recover }) : null);
     const unsubscribe = timeController.subscribe(applyControllerState);
     applyControllerState(timeController.getState());
     const canvas = documentRef.getElementById('astronomyCanvas'), heliocentricViewport = documentRef.getElementById('heliocentricViewport'), geocentricViewport = documentRef.getElementById('geocentricViewport');
     const THREE = config.THREE || root.THREE;
     if (!THREE || !education.SceneHost || !education.HeliocentricScene || !education.GeocentricScene || !canvas || !heliocentricViewport || !geocentricViewport) { setFallback('WEBGL_UNAVAILABLE', false); return handle(); }
+    const canCreateScenes = typeof education.HeliocentricScene.create === 'function' && typeof education.GeocentricScene.create === 'function';
     const createScenes = function () { return { heliocentric: education.HeliocentricScene.create({ THREE, interactionElement: interactionOf(heliocentricViewport), labelLayer: documentRef.getElementById('labelLayer'), reducedMotion }), geocentric: education.GeocentricScene.create({ THREE, interactionElement: interactionOf(geocentricViewport), labelLayer: documentRef.getElementById('labelLayer'), reducedMotion, solarTermNames: solarTermNames(education) }) }; };
-    scenes = config.scenes || createScenes();
-    host = config.host || education.SceneHost.create({ THREE, canvas, sceneGrid: canvas.parentElement, containers: { heliocentric: heliocentricViewport, geocentric: geocentricViewport }, scenes, layoutMode: modeForMedia(windowRef), selectedScene: 'heliocentric', window: windowRef, rebuildScenes: config.scenes ? null : function () { scenes = createScenes(); return scenes; }, onScenesRebuilt: function () { bindControls(); restoreAdvancedLayers(); }, onError: function () { if (host && host.dispose) host.dispose(); host = null; setFallback('THREE_RENDER_FAILED', true); }, onContextChange: function (event) { if (event.type === 'lost') { contextLost = true; contextWasPlaying = timeController.getState().playing; if (contextWasPlaying) timeController.pause(); setFallback('WEBGL_CONTEXT_LOST', false); } else { contextLost = false; if (contextWasPlaying && documentRef.hidden) hiddenWasPlaying = true; else if (contextWasPlaying && !reducedMotion) timeController.play(); contextWasPlaying = false; if (host && host.available) { clearFallback(); report('', 'WebGL 场景已恢复。'); } else retry3d(); requestRedraw(); } } });
+    function disposeScenes() { if (!scenes) return; Object.keys(scenes).forEach(function (id) { if (scenes[id] && scenes[id].dispose) scenes[id].dispose(); }); }
+    function hostOptions() { return { THREE, canvas, sceneGrid: canvas.parentElement, containers: { heliocentric: heliocentricViewport, geocentric: geocentricViewport }, scenes, layoutMode: modeForMedia(windowRef), selectedScene: 'heliocentric', window: windowRef, rebuildScenes: canCreateScenes ? function () { disposeScenes(); scenes = createScenes(); return scenes; } : null, onScenesRebuilt: function () { bindControls(); restoreAdvancedLayers(); }, onError: function () { if (host && host.dispose) host.dispose(); host = null; setFallback('THREE_RENDER_FAILED', true); }, onContextChange: onContextChange }; }
+    function createHostAndScenes(fresh) {
+      if (!scenes) scenes = config.scenes || createScenes();
+      else if (fresh && canCreateScenes) { disposeScenes(); scenes = createScenes(); }
+      host = !fresh && config.host ? config.host : education.SceneHost.create(hostOptions());
+      return !!(host && host.available);
+    }
+    function onContextChange(event) { if (event.type === 'lost') { contextLost = true; contextWasPlaying = timeController.getState().playing; if (contextWasPlaying) timeController.pause(); setFallback('WEBGL_CONTEXT_LOST', false); } else { contextLost = false; if (contextWasPlaying && documentRef.hidden) hiddenWasPlaying = true; else if (contextWasPlaying && !reducedMotion) timeController.play(); contextWasPlaying = false; if (host && host.available) { clearFallback(); report('', 'WebGL 场景已恢复。'); } else retry3d(); requestRedraw(); } }
+    createHostAndScenes(false);
     if (!host || !host.available) { host = null; setFallback('WEBGL_UNAVAILABLE', true); return handle(); }
     // Host is the only scene update owner: renderFrame updates each viewport exactly once.
     clearFallback(); renderThree();
@@ -58,7 +68,7 @@
     return handle();
     function retry3d() {
       if (stopped || contextLost || host || !THREE || !education.SceneHost || !scenes) return false;
-      try { host = education.SceneHost.create({ THREE, canvas, sceneGrid: canvas.parentElement, containers: { heliocentric: heliocentricViewport, geocentric: geocentricViewport }, scenes, layoutMode: modeForMedia(windowRef), selectedScene: 'heliocentric', window: windowRef, onError: function () { if (host && host.dispose) host.dispose(); host = null; setFallback('THREE_RENDER_FAILED', true); } }); }
+      try { createHostAndScenes(true); }
       catch (_) { host = null; setFallback('THREE_RENDER_FAILED', true); return false; }
       if (!host || !host.available) { host = null; setFallback('WEBGL_UNAVAILABLE', true); return false; }
       clearFallback(); bindControls(); renderThree(); requestRedraw(); return true;

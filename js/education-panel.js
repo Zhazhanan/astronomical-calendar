@@ -23,9 +23,10 @@
   function field(object, path) { return path.reduce((value, key) => value && value[key], object); }
   function normalizeAngle(value) { return ((Number(value) % 360) + 360) % 360; }
   function fallbackViewModel(state, code) {
-    const input = state || {}, sun = input.sun || {}, moon = input.moon || {};
+    const input = state || {}, sun = input.sun || {}, earth = input.earth || {}, moon = input.moon || {};
     const sunAngleDeg = normalizeAngle(sun.longitudeDeg);
-    const moonAngleDeg = normalizeAngle(moon.longitudeDeg);
+    const earthAngleDeg = Number.isFinite(earth.trueLongitudeDeg) ? normalizeAngle(earth.trueLongitudeDeg) : normalizeAngle(sunAngleDeg + 180);
+    const moonRelativeAngleDeg = Number.isFinite(moon.elongationDeg) ? normalizeAngle(moon.elongationDeg) : normalizeAngle(moon.longitudeDeg - sunAngleDeg);
     return Object.freeze({
       code: code || 'WEBGL_UNAVAILABLE',
       reason: '此设备无法显示 3D 场景，下面仍可学习日期、节气与月相。',
@@ -33,8 +34,8 @@
       showCards: true,
       eclipticDiagram: Object.freeze({
         sunAngleDeg,
-        moonAngleDeg,
-        moonRelativeAngleDeg: normalizeAngle(moonAngleDeg - sunAngleDeg),
+        earthAngleDeg,
+        moonRelativeAngleDeg,
         moonLatitudeDeg: Number.isFinite(moon.latitudeDeg) ? moon.latitudeDeg : 0,
         phaseName: moon.phaseName || '月相'
       })
@@ -59,11 +60,12 @@
     const svg = svgNode(documentRef, 'svg', { viewBox: '0 0 320 220', role: 'img', 'aria-label': label, class: 'fallback-diagram' });
     svg.appendChild(svgNode(documentRef, 'title', { id: 'fallbackDiagramTitle' }, '日地月二维学习示意'));
     svg.appendChild(svgNode(documentRef, 'desc', { id: 'fallbackDiagramDescription' }, label + ' 实线是地球轨道，虚线是春分点 0° 射线，弧线标出太阳黄经。'));
-    const earth = diagramPoint(diagram.sunAngleDeg, 68), moon = diagramPoint(diagram.moonRelativeAngleDeg, 25);
+    const earth = diagramPoint(diagram.earthAngleDeg, 68), moon = diagramPoint(diagram.earthAngleDeg + 180 + diagram.moonRelativeAngleDeg, 25);
     svg.appendChild(svgNode(documentRef, 'line', { x1: 160, y1: 110, x2: 160, y2: 28, class: 'fallback-zero-ray' }));
     svg.appendChild(svgNode(documentRef, 'text', { x: 166, y: 32, class: 'fallback-label' }, '春分点 0°'));
     svg.appendChild(svgNode(documentRef, 'circle', { cx: 160, cy: 110, r: 68, class: 'fallback-orbit' }));
-    svg.appendChild(svgNode(documentRef, 'path', { d: `M 160 42 A 68 68 0 ${diagram.sunAngleDeg > 180 ? 1 : 0} 1 ${earth.x.toFixed(1)} ${earth.y.toFixed(1)}`, class: 'fallback-longitude-arc' }));
+    const sunPoint = diagramPoint(diagram.sunAngleDeg, 68);
+    svg.appendChild(svgNode(documentRef, 'path', { d: `M 160 42 A 68 68 0 ${diagram.sunAngleDeg > 180 ? 1 : 0} 1 ${sunPoint.x.toFixed(1)} ${sunPoint.y.toFixed(1)}`, class: 'fallback-longitude-arc' }));
     svg.appendChild(svgNode(documentRef, 'circle', { cx: 160, cy: 110, r: 13, class: 'fallback-sun' }));
     svg.appendChild(svgNode(documentRef, 'text', { x: 143, y: 115, class: 'fallback-label' }, '太阳'));
     svg.appendChild(svgNode(documentRef, 'circle', { cx: earth.x.toFixed(1), cy: earth.y.toFixed(1), r: 8, class: 'fallback-earth' }));
@@ -277,9 +279,10 @@
     const onAdvancedLayer = typeof config.onAdvancedLayer === 'function' ? config.onAdvancedLayer : function () { return false; };
     const onRetry3d = typeof config.onRetry3d === 'function' ? config.onRetry3d : function () {};
     const onError = typeof config.onError === 'function' ? config.onError : function () {};
+    const onRecovered = typeof config.onRecovered === 'function' ? config.onRecovered : function () {};
     const StarCatalog = config.StarCatalog || {};
     const listeners = [], nodes = {};
-    let previous = null, highlightTimer = null, disposed = false, lastStatus = null, timelineKey = null, timelineAnnual = null, renderedTimeline = null, advancedInitialized = false, catalogReader = null;
+    let previous = null, highlightTimer = null, disposed = false, lastStatus = null, timelineKey = null, timelineAnnual = null, renderedTimeline = null, advancedInitialized = false, catalogReader = null, activeFallbackCode = null, activeFallbackRetry = false;
     function get(id) { return nodes[id] || (nodes[id] = root.getElementById(id)); }
     function listen(id, type, fn) { const target = get(id); if (target && target.addEventListener) { target.addEventListener(type, fn); listeners.push([target, type, fn]); } }
     function status(message) { if (message === lastStatus) return; lastStatus = message; const target = get('appStatus'); if (target) target.textContent = message || ''; }
@@ -343,7 +346,7 @@
           const unit = get('advancedRaUnit') && get('advancedRaUnit').value;
           const result = StarCatalog.parseCsv(String(reader.result || ''), { raUnit: unit });
           if (result.fatalErrors.length) { advancedStatus(result.fatalErrors.join(' ')); return; }
-          advancedSummary(result); advancedStatus(`本地导入完成：${result.acceptedRows} 条可用，${result.skippedRows} 条已跳过。`);
+          advancedSummary(result); onRecovered('ADVANCED_CSV_FAILED'); advancedStatus(`本地导入完成：${result.acceptedRows} 条可用，${result.skippedRows} 条已跳过。`);
           if (!onAdvancedLayer('starCatalog', result.stars)) advancedStatus(`本地导入完成：${result.acceptedRows} 条可用，${result.skippedRows} 条已跳过。三维场景不可用，显示摘要。`);
           onRenderRequested();
         } catch (_) { advancedStatus('CSV 解析失败；仍可继续使用主要学习内容。'); onError('ADVANCED_CSV_FAILED'); }
@@ -355,21 +358,27 @@
       const container = get('fallbackDiagram'), sceneGrid = get('sceneGrid') || get('astronomyCanvas') && get('astronomyCanvas').parentElement;
       const retry = get('retry3dButton'), canvas = get('astronomyCanvas'), labels = get('labelLayer');
       if (sceneGrid && sceneGrid.classList) sceneGrid.classList.add('scene-fallback-active');
+      if (root.body && root.body.classList) root.body.classList.add('fallback-active');
       if (canvas && canvas.style) canvas.style.display = 'none';
       if (labels && labels.style) labels.style.display = 'none';
       if (container) renderFallback(container, fallbackViewModel(worldState, code), { document: root });
+      activeFallbackCode = code; activeFallbackRetry = !!retryAvailable;
       if (retry) { retry.disabled = !retryAvailable; retry.hidden = !retryAvailable; }
-      ['showOrbit', 'showLabels', 'showObserver', 'showDayNight', 'advancedMilkyWay', 'advancedMansions', 'resetBtn', 'snapBtn'].forEach(function (id) { const node = get(id); if (node) node.disabled = true; });
+      const tabs = get('sceneTabs'); if (tabs) tabs.hidden = true;
+      ['showOrbit', 'showLabels', 'showObserver', 'showDayNight', 'advancedMilkyWay', 'advancedMansions', 'resetBtn', 'snapBtn', 'heliocentricSceneBtn', 'geocentricSceneBtn'].forEach(function (id) { const node = get(id); if (node) node.disabled = true; });
     }
     function clearFallback() {
       const container = get('fallbackDiagram'), sceneGrid = get('sceneGrid') || get('astronomyCanvas') && get('astronomyCanvas').parentElement;
       const retry = get('retry3dButton'), canvas = get('astronomyCanvas'), labels = get('labelLayer');
       if (sceneGrid && sceneGrid.classList) sceneGrid.classList.remove('scene-fallback-active');
+      if (root.body && root.body.classList) root.body.classList.remove('fallback-active');
       if (canvas && canvas.style) canvas.style.display = '';
       if (labels && labels.style) labels.style.display = '';
       if (container) while (container.firstChild) container.removeChild(container.firstChild);
+      activeFallbackCode = null; activeFallbackRetry = false;
       if (retry) retry.hidden = true;
-      ['showOrbit', 'showLabels', 'showObserver', 'showDayNight', 'advancedMilkyWay', 'advancedMansions', 'resetBtn', 'snapBtn'].forEach(function (id) { const node = get(id); if (node) node.disabled = false; });
+      const tabs = get('sceneTabs'); if (tabs) tabs.hidden = false;
+      ['showOrbit', 'showLabels', 'showObserver', 'showDayNight', 'advancedMilkyWay', 'advancedMansions', 'resetBtn', 'snapBtn', 'heliocentricSceneBtn', 'geocentricSceneBtn'].forEach(function (id) { const node = get(id); if (node) node.disabled = false; });
     }
     function bind() {
       listen('dateTimeInput', 'change', applyDateTime); listen('previousDayButton', 'click', () => clock.stepDays(-1)); listen('nextDayButton', 'click', () => clock.stepDays(1)); listen('todayButton', 'click', () => clock.setInstant(now()));
@@ -430,6 +439,7 @@
         if (notice) notice.textContent = '';
         if (!renderedTimeline) { renderedTimeline = renderTimeline(container, model, { clock, document: root, timeZone: key.split('|')[1] }); }
         else updateTimelinePointer(renderedTimeline, model);
+        onRecovered('TIMELINE_RENDER_FAILED');
       } catch (_) { if (notice) notice.textContent = '本年度时间轴数据暂不可用；日期与当前历法读数仍可学习。'; onError('TIMELINE_RENDER_FAILED'); }
     }
     function update(clockState, worldState) {
@@ -439,6 +449,7 @@
       updateLocationInputs(clockState.location);
       updateTimeline(clockState, worldState);
       renderKnowledgeCards(worldState);
+      if (activeFallbackCode) setFallback(worldState, activeFallbackCode, activeFallbackRetry);
       const changes = boundaryChanges(previous, worldState); previous = worldState;
       if (changes.length && clockState.playing) { const target = get('timeControls'); if (target && target.classList) target.classList.add('boundary-highlight'); if (highlightTimer) timers.clearTimeout(highlightTimer); highlightTimer = timers.setTimeout(() => { if (target && target.classList) target.classList.remove('boundary-highlight'); highlightTimer = null; }, 650); }
       onRenderRequested();

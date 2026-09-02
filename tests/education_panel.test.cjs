@@ -270,6 +270,25 @@ test('fallback diagram has an accessible non-color SVG explanation', () => {
   assert.ok(all.some((item) => /春分点 0°/.test(item.textContent)));
 });
 
+test('fallback uses heliocentric Earth position and phase-relative Moon direction without a 180° flip', () => {
+  const state = WorldState.create({ instantUtc: Date.UTC(2026, 2, 20, 10), timeZone: 'Asia/Shanghai' });
+  const model = Education.fallbackViewModel(state, 'WEBGL_UNAVAILABLE');
+  assert.equal(model.eclipticDiagram.earthAngleDeg, state.earth.trueLongitudeDeg);
+  assert.equal(model.eclipticDiagram.sunAngleDeg, state.sun.longitudeDeg);
+  assert.ok(Math.abs(model.eclipticDiagram.moonRelativeAngleDeg - state.moon.elongationDeg) < 1e-9);
+  assert.ok(Math.abs((((model.eclipticDiagram.earthAngleDeg + 180) % 360) - model.eclipticDiagram.sunAngleDeg + 540) % 360 - 180) < 2);
+});
+
+test('active fallback redraws when the shared WorldState changes', () => {
+  const s = setup(); s.nodes.fallbackDiagram = node(); s.nodes.sceneGrid = node(); s.nodes.astronomyCanvas = node(); s.nodes.retry3dButton = node(); s.nodes.labelLayer = node();
+  const panel = Education.create({ root: s.document, clock: s.clock, Calendar: s.Calendar, Observer: s.Observer });
+  panel.setFallback({ sun: { longitudeDeg: 0 }, earth: { trueLongitudeDeg: 180 }, moon: { elongationDeg: 0 } }, 'WEBGL_UNAVAILABLE', false);
+  const first = s.nodes.fallbackDiagram.children[0].getAttribute('aria-label');
+  panel.update(s.clock.getState(), { instantUtc: 1, displayTime: {}, sun: { longitudeDeg: 90 }, earth: { trueLongitudeDeg: 270 }, moon: { elongationDeg: 90 }, solarTerms: {}, ganzhi: {}, lunar: {}, observer: {} });
+  assert.notEqual(s.nodes.fallbackDiagram.children[0].getAttribute('aria-label'), first);
+  panel.dispose();
+});
+
 test('catalog readers ignore stale callbacks and disposal callbacks', () => {
   const s = setup(), calls = [], readers = [];
   class Reader { constructor() { readers.push(this); this.result = ''; this.aborted = false; } readAsText() {} abort() { this.aborted = true; if (this.onabort) this.onabort(); } }
