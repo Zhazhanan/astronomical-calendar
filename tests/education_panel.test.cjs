@@ -64,6 +64,32 @@ test('control model formats selected-zone time without changing UTC', () => {
   assert.equal(model.speed, 7);
 });
 
+test('Ganzhi card neutrally explains differing boundaries', () => {
+  const card = Education.ganzhiCardView({
+    springFestival: { name: '乙巳' },
+    liChun: { name: '丙午' },
+    differs: true
+  });
+  assert.match(card.explanation, /春节换年/);
+  assert.match(card.explanation, /立春换年/);
+  assert.doesNotMatch(card.explanation, /错误|唯一正确/);
+});
+
+test('why card chooses current evidence instead of static copy', () => {
+  const card = Education.whyCardView({
+    observer: { daylightTrend: 'increasing' },
+    moon: { phaseName: '上弦附近', waxing: true },
+    ganzhi: { differs: false },
+    solarTerms: { millisecondsUntilNext: 20 * 86400000 }
+  });
+  assert.match(card.body, /昼渐长|月相/);
+});
+
+test('year lookup is anchored to 甲子 cycle', () => {
+  assert.equal(Education.yearLookupView(1984).ganzhi, '甲子');
+  assert.equal(Education.yearLookupView(2044).ganzhi, '甲子');
+});
+
 test('boundary changes cover term, lunar phase, spring festival, and Li Chun without duplicates', () => {
   const previous = { solarTerms: { current: { name: '惊蛰' } }, moon: { phaseName: '上弦月' }, lunar: { month: 12, day: 29 }, ganzhi: { liChun: { name: '甲辰' } } };
   const next = { solarTerms: { current: { name: '春分' } }, moon: { phaseName: '满月' }, lunar: { month: 1, day: 1 }, ganzhi: { liChun: { name: '乙巳' } } };

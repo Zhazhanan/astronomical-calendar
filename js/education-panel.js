@@ -7,6 +7,7 @@
 
   const PRESET_KEYS = Object.freeze({ beijing: '北京', shanghai: '上海', guangzhou: '广州' });
   const LAYER_IDS = Object.freeze(['showOrbit', 'showLabels', 'showObserver', 'showDayNight']);
+  const YEAR_MIN = 1900, YEAR_MAX = 2100;
   function pad(value, length) { return String(value == null ? 0 : value).padStart(length, '0'); }
   function controlViewModel(input) {
     const clock = input && input.clock || {}, time = input && input.displayTime || {};
@@ -20,6 +21,64 @@
     });
   }
   function field(object, path) { return path.reduce((value, key) => value && value[key], object); }
+  function finite(value, digits) { return Number.isFinite(value) ? Number(value).toFixed(digits == null ? 1 : digits) : '—'; }
+  function durationText(milliseconds) {
+    if (!Number.isFinite(milliseconds)) return '—';
+    const days = Math.floor(Math.max(0, milliseconds) / 86400000), hours = Math.floor(Math.max(0, milliseconds % 86400000) / 3600000);
+    return days ? `${days}天${hours}小时` : `${hours}小时`;
+  }
+  function zonedTime(instantUtc, timeZone) {
+    if (!Number.isFinite(instantUtc)) return '—';
+    try { return new Intl.DateTimeFormat('zh-CN', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(instantUtc)); }
+    catch (_) { return '—'; }
+  }
+  function currentMomentCardView(state, browserTimeZone) {
+    const instantUtc = state && state.instantUtc, selected = field(state, ['displayTime', 'timeZone']) || state && state.timeZone || 'Asia/Shanghai';
+    const local = browserTimeZone || (typeof Intl !== 'undefined' && Intl.DateTimeFormat ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC');
+    return Object.freeze({ title: '当前时刻', rows: Object.freeze([
+      ['UTC', zonedTime(instantUtc, 'UTC')], ['上海', zonedTime(instantUtc, 'Asia/Shanghai')], ['浏览器本地（' + local + '）', zonedTime(instantUtc, local)], ['选择时区（' + selected + '）', zonedTime(instantUtc, selected)]
+    ]), explanation: '四个读数使用同一个瞬间，只是用不同地点的时区表示。' });
+  }
+  function solarSeasonCardView(state) {
+    const sun = state && state.sun || {}, terms = state && state.solarTerms || sun.solarTerms || {};
+    return Object.freeze({ title: '太阳与季节', rows: Object.freeze([
+      ['太阳黄经', finite(sun.longitudeDeg) + '°'], ['太阳赤纬', finite(sun.declinationDeg) + '°'], ['日地距离', Number.isFinite(sun.distanceAu) ? finite(sun.distanceAu, 4) + ' AU' : '—'], ['当前节气', field(terms, ['current', 'name']) || '—'], ['下一节气', field(terms, ['next', 'name']) || '—'], ['距下一节气', durationText(terms.millisecondsRemaining != null ? terms.millisecondsRemaining : terms.millisecondsUntilNext)]
+    ]), explanation: '黄经每前进约 15°，就跨入一个节气；赤纬影响南北半球的季节和昼长。' });
+  }
+  function calendarMoonCardView(state) {
+    const gregorian = state && state.gregorian || {}, lunar = state && state.lunar || {}, moon = state && state.moon || {}, phase = moon.phaseName || field(lunar, ['currentPhase', 'name']) || '—';
+    return Object.freeze({ title: '公历、农历与月相', rows: Object.freeze([
+      ['公历', [gregorian.year, gregorian.month, gregorian.day].every(Number.isFinite) ? `${gregorian.year}年${gregorian.month}月${gregorian.day}日` : '—'], ['农历', lunar.supported === false ? '当前日期不在农历支持范围' : `${lunar.isLeapMonth ? '闰' : ''}${lunar.monthName || lunar.month || '—'}月${lunar.dayName || lunar.day || ''}`], ['月相', phase], ['下一主相', field(lunar, ['nextPhase', 'name']) || '—'], ['距下一主相', durationText(lunar.millisecondsUntilNextPhase)]
+    ]), explanation: '农历月以朔（月相接近新月）为起点；月相反映日、地、月三者的相对位置。' });
+  }
+  function ganzhiCardView(ganzhi) {
+    const value = ganzhi || {}, springFestival = field(value, ['springFestival', 'name']) || '—', liChun = field(value, ['liChun', 'name']) || '—';
+    return Object.freeze({ title: '两种干支年', rows: Object.freeze([['春节换年', springFestival], ['立春换年', liChun]]), explanation: value.differs ? '春节换年与立春换年采用不同的年界，所以这段时间会显示不同名称；它们服务于不同的历法语境。' : '春节换年与立春换年在当前时刻给出相同名称；两种年界的定义仍然不同。' });
+  }
+  function observerCardView(state) {
+    const observer = state && state.observer || {}, location = observer.location || state && state.location || {}, sun = state && state.sun || {};
+    const stateName = ({ day: '白天', twilight: '晨昏蒙影', night: '夜晚' })[observer.hemisphereState] || '—';
+    return Object.freeze({ title: '观察地点', rows: Object.freeze([
+      ['地点', location.name || '自定义地点'], ['坐标', `${finite(location.latitudeDeg)}°，${finite(location.longitudeDeg)}°`], ['太阳高度', finite(observer.altitudeDeg) + '°'], ['太阳方位', finite(observer.azimuthDeg) + '°（北=0°，东=90°）'], ['昼长 / 夜长', `${finite(observer.daylightHours)}小时 / ${finite(observer.nightHours)}小时`], ['当前天空', stateName], ['太阳直射点', `${finite(field(observer, ['subsolarPoint', 'latitudeDeg']) != null ? field(observer, ['subsolarPoint', 'latitudeDeg']) : sun.declinationDeg)}°，${finite(field(observer, ['subsolarPoint', 'longitudeDeg']))}°`]
+    ]), explanation: '高度角表示太阳离地平线的角度；方位角从正北开始顺时针量。昼长主要由纬度和太阳赤纬决定。' });
+  }
+  function whyCardView(state) {
+    const input = state || {}, evidence = [], terms = input.solarTerms || {}, moon = input.moon || {}, observer = input.observer || {}, ganzhi = input.ganzhi || {};
+    if (ganzhi.differs) evidence.push('春节换年与立春换年正在给出不同的干支年，因为两者使用不同年界。');
+    const untilTerm = terms.millisecondsRemaining != null ? terms.millisecondsRemaining : terms.millisecondsUntilNext;
+    if (Number.isFinite(untilTerm) && untilTerm <= 7 * 86400000) evidence.push(`下一节气${terms.next && terms.next.name ? '“' + terms.next.name + '”' : ''}将在${durationText(untilTerm)}后到来，太阳黄经正接近下一个 15° 刻度。`);
+    if (moon.phaseName || moon.waxing != null) evidence.push(`月相${moon.phaseName || '正在变化'}${moon.waxing === true ? '，目前月面亮部在增加' : moon.waxing === false ? '，目前月面亮部在减少' : ''}。`);
+    if (observer.daylightTrend === 'increasing') evidence.push('当地白昼渐长，说明太阳每日经过天空的时间正在增加。');
+    if (observer.daylightTrend === 'decreasing') evidence.push('当地白昼渐短，说明太阳每日经过天空的时间正在减少。');
+    if (!evidence.length) evidence.push('改变时刻后，对照太阳黄经、月相和当地太阳高度，可以看到同一几何关系在不同读数中的表现。');
+    return Object.freeze({ title: '为什么会这样？', body: evidence.slice(0, 2).join(' ') });
+  }
+  function yearLookupView(year, Calendar) {
+    const parsed = Number(year);
+    if (!Number.isInteger(parsed) || parsed < YEAR_MIN || parsed > YEAR_MAX) return Object.freeze({ valid: false, year: parsed, ganzhi: null, message: `请输入 ${YEAR_MIN}–${YEAR_MAX} 的整数年份。` });
+    const result = Calendar && typeof Calendar.ganzhiForYear === 'function' ? Calendar.ganzhiForYear(parsed) : (() => { const stems = '甲乙丙丁戊己庚辛壬癸', branches = '子丑寅卯辰巳午未申酉戌亥', index = ((parsed - 1984) % 60 + 60) % 60; return { index, name: stems[index % 10] + branches[index % 12] }; })();
+    return Object.freeze({ valid: true, year: parsed, ganzhi: result.name, index: result.index, message: `${parsed}年：${result.name}（六十甲子第${result.index + 1}位）` });
+  }
   function phaseKind(state) {
     const phase = field(state, ['moon', 'phaseName']) || field(state, ['calendar', 'moonPhase', 'name']) || '';
     if (/新月|朔/.test(phase)) return 'new-moon';
@@ -130,6 +189,30 @@
     rendered.pointer.setAttribute('x1', x); rendered.pointer.setAttribute('x2', x); rendered.pointerLabel.setAttribute('x', x + 5); rendered.pointerLabel.textContent = model.dateLabel;
     rendered.scrub.value = String(Math.max(model.annual.startUtc, Math.min(model.annual.endUtc - 1, model.pointerInstantUtc)));
   }
+  function appendCardRows(container, card, documentRef) {
+    if (!container || !documentRef || !documentRef.createElement) return;
+    while (container.firstChild) container.removeChild(container.firstChild);
+    const list = documentRef.createElement('dl'); list.className = 'knowledge-card-values';
+    (card.rows || []).forEach(function (row) {
+      const term = documentRef.createElement('dt'), definition = documentRef.createElement('dd');
+      term.textContent = row[0]; term.title = '天文读数的简短说明见本卡下方。'; definition.textContent = row[1]; definition.setAttribute('aria-live', 'off');
+      list.appendChild(term); list.appendChild(definition);
+    });
+    container.appendChild(list);
+    const explanation = documentRef.createElement('p'); explanation.className = 'knowledge-card-explanation'; explanation.textContent = card.explanation || card.body || ''; container.appendChild(explanation);
+  }
+  function renderSixtyYearRing(container, documentRef, Calendar) {
+    if (!container || !documentRef || !documentRef.createElementNS) return;
+    while (container.firstChild) container.removeChild(container.firstChild);
+    const svg = svgNode(documentRef, 'svg', { viewBox: '0 0 240 240', role: 'img', 'aria-label': '六十甲子环，文字与序号双重标识' });
+    svg.appendChild(svgNode(documentRef, 'circle', { cx: 120, cy: 120, r: 92, fill: 'none', stroke: 'currentColor' }));
+    for (let index = 0; index < 60; index += 1) {
+      const angle = -Math.PI / 2 + index * Math.PI * 2 / 60, year = 1984 + index, name = yearLookupView(year, Calendar).ganzhi;
+      const x = 120 + Math.cos(angle) * 105, y = 120 + Math.sin(angle) * 105;
+      svg.appendChild(svgNode(documentRef, 'text', { x, y, 'text-anchor': 'middle', 'font-size': 7, 'aria-label': `${index + 1} ${name}` }, `${index + 1}${name}`));
+    }
+    container.appendChild(svg);
+  }
   function create(options) {
     const config = options || {}, root = config.root, clock = config.clock, Calendar = config.Calendar, Observer = config.Observer || {}, now = config.now || Date.now;
     if (!root || !root.getElementById || !clock || !Calendar || typeof Calendar.zonedLocalDateTimeToUtc !== 'function') throw new TypeError('root, clock, and Calendar are required');
@@ -176,7 +259,28 @@
       listen('latitudeInput', 'change', applyCustomLocation); listen('longitudeInput', 'change', applyCustomLocation);
       LAYER_IDS.forEach((id) => listen(id, 'change', () => onLayerChange(id, !!get(id).checked)));
       listen('heliocentricSceneBtn', 'click', () => onSelectedScene('heliocentric')); listen('geocentricSceneBtn', 'click', () => onSelectedScene('geocentric'));
+      listen('yearLookupInput', 'change', function () { renderYearLookup(); });
+      listen('sixtyYearRingToggle', 'click', function () {
+        const container = get('sixtyYearRing'); if (!container) return;
+        const expanded = get('sixtyYearRingToggle').getAttribute && get('sixtyYearRingToggle').getAttribute('aria-expanded') === 'true';
+        if (expanded) { while (container.firstChild) container.removeChild(container.firstChild); if (get('sixtyYearRingToggle').setAttribute) get('sixtyYearRingToggle').setAttribute('aria-expanded', 'false'); }
+        else { renderSixtyYearRing(container, root, Calendar); if (get('sixtyYearRingToggle').setAttribute) get('sixtyYearRingToggle').setAttribute('aria-expanded', 'true'); }
+      });
       if (root.addEventListener) { const keydown = (event) => { const target = event.target || {}; if (event.code === 'Space' && !target.isContentEditable && !/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(target.tagName || '')) { if (event.preventDefault) event.preventDefault(); clock.getState().playing ? clock.pause() : clock.play(); } }; root.addEventListener('keydown', keydown); listeners.push([root, 'keydown', keydown]); }
+    }
+    function renderYearLookup() {
+      const input = get('yearLookupInput'), output = get('yearLookupResult'); if (!input || !output) return;
+      const view = yearLookupView(input.value, Calendar); output.textContent = view.message; output.setAttribute && output.setAttribute('aria-live', 'off');
+      if (input.setAttribute) input.setAttribute('aria-invalid', String(!view.valid));
+    }
+    function renderKnowledgeCards(worldState) {
+      const documentRef = root;
+      appendCardRows(get('currentMomentCardBody'), currentMomentCardView(worldState), documentRef);
+      appendCardRows(get('solarSeasonCardBody'), solarSeasonCardView(worldState), documentRef);
+      appendCardRows(get('calendarMoonCardBody'), calendarMoonCardView(worldState), documentRef);
+      appendCardRows(get('ganzhiCardBody'), ganzhiCardView(worldState && worldState.ganzhi), documentRef);
+      appendCardRows(get('observerCardBody'), observerCardView(worldState), documentRef);
+      appendCardRows(get('whyCardBody'), whyCardView(worldState), documentRef);
     }
     function annualFromState(worldState, clockState, year, timeZone) {
       if (!worldState) return null;
@@ -206,6 +310,7 @@
       if (dateTime) dateTime.value = model.dateTimeValue; if (play) { play.textContent = model.playLabel; if (play.setAttribute) play.setAttribute('aria-pressed', String(model.playing)); } if (speed) speed.value = String(model.speed); if (resolved) resolved.textContent = '当前：' + model.timeZone;
       updateLocationInputs(clockState.location);
       updateTimeline(clockState, worldState);
+      renderKnowledgeCards(worldState);
       const changes = boundaryChanges(previous, worldState); previous = worldState;
       if (changes.length && clockState.playing) { const target = get('timeControls'); if (target && target.classList) target.classList.add('boundary-highlight'); if (highlightTimer) timers.clearTimeout(highlightTimer); highlightTimer = timers.setTimeout(() => { if (target && target.classList) target.classList.remove('boundary-highlight'); highlightTimer = null; }, 650); }
       onRenderRequested();
@@ -213,5 +318,5 @@
     bind();
     return Object.freeze({ update, dispose: function () { if (disposed) return; disposed = true; if (highlightTimer) timers.clearTimeout(highlightTimer); listeners.splice(0).forEach((item) => item[0].removeEventListener(item[1], item[2])); } });
   }
-  return Object.freeze({ controlViewModel, boundaryChanges, timelineViewModel, lunarSegmentView, timelineScrubController, renderTimeline, create });
+  return Object.freeze({ controlViewModel, boundaryChanges, timelineViewModel, lunarSegmentView, timelineScrubController, renderTimeline, currentMomentCardView, solarSeasonCardView, calendarMoonCardView, ganzhiCardView, observerCardView, whyCardView, yearLookupView, create });
 });
