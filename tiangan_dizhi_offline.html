@@ -23,10 +23,10 @@
     <fieldset class="layer-controls"><legend>显示图层</legend><label><input id="showOrbit" type="checkbox" checked>轨道与黄道</label><label><input id="showLabels" type="checkbox" checked>名称与角度标签</label><label><input id="showObserver" type="checkbox" checked>观察者标记</label><label><input id="showDayNight" type="checkbox" checked>昼夜分界</label><label><input id="showEcl" type="checkbox" checked disabled>黄道、赤道与二十四节气</label><label><input id="showSolarAngle" type="checkbox" checked disabled>太阳黄经角</label><label class="visually-muted"><input id="showJiazi" type="checkbox" disabled>六十甲子空间连线（不使用）</label></fieldset>
     <div class="scene-actions"><button id="resetBtn" type="button">重置两个视角</button><button id="snapBtn" type="button" aria-label="导出 3D PNG（不含文字标签）" title="导出 3D PNG（不含文字标签）">导出 3D PNG（不含文字标签）</button></div>
   </section>
-  <nav id="sceneTabs" class="scene-tabs" aria-label="移动端场景切换"><button id="heliocentricSceneBtn" type="button" aria-pressed="true">太阳中心视角</button><button id="geocentricSceneBtn" type="button" aria-pressed="false">地球中心视角</button></nav>
+  <nav id="sceneTabs" class="scene-tabs" role="tablist" aria-label="移动端场景切换"><button id="heliocentricSceneBtn" type="button" role="tab" aria-controls="heliocentricViewport" aria-selected="true" aria-pressed="true">太阳中心视角</button><button id="geocentricSceneBtn" type="button" role="tab" aria-controls="geocentricViewport" aria-selected="false" aria-pressed="false">地球中心视角</button></nav>
   <section id="sceneGrid" class="scene-grid scene-layout-desktop" data-layout="desktop" aria-label="日地月双视角">
-    <article id="heliocentricViewport" class="scene-viewport"><div class="scene-title"><span>视角 A</span><h2>太阳中心</h2><p>看地球公转、黄道与月球轨道倾角。</p></div><div class="scene-interaction" aria-label="拖动旋转太阳中心场景"></div></article>
-    <article id="geocentricViewport" class="scene-viewport"><div class="scene-title"><span>视角 B</span><h2>地球中心</h2><p>看太阳黄经、节气、月相与交点。</p></div><div class="scene-interaction" aria-label="拖动旋转地球中心场景"></div></article>
+    <article id="heliocentricViewport" class="scene-viewport" role="tabpanel" aria-labelledby="heliocentricSceneBtn"><div class="scene-title"><span>视角 A</span><h2>太阳中心</h2><p>看地球公转、黄道与月球轨道倾角。</p></div><div class="scene-interaction" aria-label="拖动旋转太阳中心场景"></div></article>
+    <article id="geocentricViewport" class="scene-viewport" role="tabpanel" aria-labelledby="geocentricSceneBtn"><div class="scene-title"><span>视角 B</span><h2>地球中心</h2><p>看太阳黄经、节气、月相与交点。</p></div><div class="scene-interaction" aria-label="拖动旋转地球中心场景"></div></article>
     <canvas id="astronomyCanvas" aria-label="太阳、地球与月球三维教学场景"></canvas>
     <div id="fallbackDiagram" class="fallback-diagram-host"></div>
     <button id="retry3dButton" class="retry-3d-button" type="button" hidden>重试 3D</button>

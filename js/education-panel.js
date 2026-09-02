@@ -393,7 +393,10 @@
       listen('advancedMansions', 'change', function () { toggleAdvanced('advancedMansions'); });
       listen('advancedCatalogInput', 'change', readCatalogFile);
       listen('retry3dButton', 'click', onRetry3d);
-      listen('heliocentricSceneBtn', 'click', () => onSelectedScene('heliocentric')); listen('geocentricSceneBtn', 'click', () => onSelectedScene('geocentric'));
+      const sceneIds = ['heliocentric', 'geocentric'];
+      function selectScene(id, focus) { onSelectedScene(id); sceneIds.forEach(function (sceneId) { const button = get(sceneId + 'SceneBtn'), panel = get(sceneId + 'Viewport'), active = sceneId === id; if (button && button.setAttribute) { button.setAttribute('aria-selected', String(active)); button.setAttribute('aria-pressed', String(active)); } if (panel && panel.setAttribute) panel.setAttribute('aria-hidden', String(!active)); }); const button = get(id + 'SceneBtn'); if (focus && button && button.focus) button.focus(); }
+      listen('heliocentricSceneBtn', 'click', () => selectScene('heliocentric', false)); listen('geocentricSceneBtn', 'click', () => selectScene('geocentric', false));
+      sceneIds.forEach(function (id, index) { listen(id + 'SceneBtn', 'keydown', function (event) { const key = event.key || event.code; let next = index; if (key === 'ArrowRight' || key === 'ArrowDown') next = (index + 1) % sceneIds.length; else if (key === 'ArrowLeft' || key === 'ArrowUp') next = (index + sceneIds.length - 1) % sceneIds.length; else if (key === 'Home') next = 0; else if (key === 'End') next = sceneIds.length - 1; else return; if (event.preventDefault) event.preventDefault(); selectScene(sceneIds[next], true); }); });
       listen('yearLookupInput', 'change', function () { renderYearLookup(); });
       listen('sixtyYearRingToggle', 'click', function () {
         const container = get('sixtyYearRing'); if (!container) return;
