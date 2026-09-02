@@ -173,3 +173,55 @@ test('retry recreates 3D without rebuilding the clock and preserves fallback on 
   s.host.dispose();
   handle.stop();
 });
+
+test('initial fallback still binds reset and responsive controls after a successful retry', () => {
+  const s = setup(); let resets = 0, layouts = 0, snapshots = 0, attempts = 0;
+  s.scenes.heliocentric.resetView = () => { resets += 1; };
+  s.host.setLayoutMode = () => { layouts += 1; };
+  s.nodes.astronomyCanvas.toDataURL = () => { snapshots += 1; return 'data:image/png;base64,x'; };
+  s.education.SceneHost.create = () => (++attempts === 1 ? { available: false } : s.host);
+  const handle = App.start({ AstroEducation: s.education, document: s.document, window: s.window, THREE: {}, timeController: s.controller, scenes: s.scenes });
+  assert.equal(handle.retry3d(), true);
+  s.nodes.resetBtn.emit('click'); s.nodes.snapBtn.emit('click'); s.media.get('(max-width: 600px)').emit('change');
+  assert.equal(resets, 1); assert.equal(snapshots, 1); assert.equal(layouts, 1); handle.stop();
+});
+
+test('a transient timeline fault recovers back to a persistent WebGL fallback status', () => {
+  const s = setup(); let panelOptions;
+  s.education.EducationPanel = { create: (options) => { panelOptions = options; return { update() {}, setFallback() {}, dispose() {} }; } };
+  App.start({ AstroEducation: s.education, document: s.document, window: s.window, timeController: s.controller });
+  panelOptions.onError('TIMELINE_RENDER_FAILED');
+  panelOptions.onRecovered('TIMELINE_RENDER_FAILED');
+  assert.match(s.nodes.appStatus.textContent, /WEBGL_UNAVAILABLE/);
+});
+
+test('a retry creates fresh scenes, restores advanced layers, and lets the host dispose the failed runtime scenes once', () => {
+  const s = setup(); let panelOptions, createCount = 0, disposed = 0, advanced = [];
+  const first = { heliocentric: { dispose() { disposed += 1; } }, geocentric: { dispose() { disposed += 1; } } };
+  const replacement = { heliocentric: {}, geocentric: { initializeAdvancedLayers() { advanced.push('initialize'); }, setAdvancedLayer(id, value) { advanced.push([id, value]); } } };
+  s.education.HeliocentricScene = { create() { return createCount++ < 2 ? first.heliocentric : replacement.heliocentric; } };
+  s.education.GeocentricScene = { create() { return createCount++ < 2 ? first.geocentric : replacement.geocentric; } };
+  const brokenHost = { available: true, renderFrame() { throw new Error('renderer stopped'); }, dispose() { first.heliocentric.dispose(); first.geocentric.dispose(); }, setLayoutMode() {}, setSelectedScene() {} };
+  const replacementHost = { available: true, renderFrame() {}, dispose() {}, setLayoutMode() {}, setSelectedScene() {} };
+  let hostAttempts = 0;
+  s.education.SceneHost.create = () => (++hostAttempts === 1 ? brokenHost : replacementHost);
+  s.education.EducationPanel = { create(options) { panelOptions = options; return { update() {}, setFallback() {}, clearFallback() {}, dispose() {} }; } };
+  const handle = App.start({ AstroEducation: s.education, document: s.document, window: s.window, THREE: {}, timeController: s.controller });
+  panelOptions.onAdvancedLayer('initialize', true); panelOptions.onAdvancedLayer('advancedMilkyWay', true);
+  assert.equal(handle.retry3d(), true);
+  assert.equal(disposed, 2);
+  assert.deepEqual(advanced, ['initialize', ['advancedMilkyWay', true], ['advancedMansions', false]]);
+  handle.stop();
+});
+
+test('renderer construction failure releases unowned scenes and retry builds new ones', () => {
+  const s = setup(); let created = 0, disposed = 0, attempts = 0;
+  s.education.HeliocentricScene = { create() { created += 1; return { dispose() { disposed += 1; } }; } };
+  s.education.GeocentricScene = { create() { created += 1; return { dispose() { disposed += 1; } }; } };
+  s.education.SceneHost.create = () => (++attempts === 1 ? { available: false } : s.host);
+  const handle = App.start({ AstroEducation: s.education, document: s.document, window: s.window, THREE: {}, timeController: s.controller });
+  assert.equal(disposed, 2);
+  assert.equal(handle.retry3d(), true);
+  assert.equal(created, 4);
+  handle.stop();
+});

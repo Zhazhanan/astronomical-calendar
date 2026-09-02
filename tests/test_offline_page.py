@@ -112,6 +112,13 @@ class OfflinePageControlsTest(unittest.TestCase):
         self.assertIn('js/star-catalog.js', self.html)
         self.assertIn('传统星官示意', self.html)
 
+    def test_fallback_hides_only_three_dimensional_actions_outside_the_scene_grid(self):
+        stylesheet = (Path(__file__).parents[1] / "styles" / "astronomy-education.css").read_text(encoding="utf-8")
+        self.assertRegex(stylesheet, r'body\.fallback-active[^\{]*#sceneTabs[^\{]*\.scene-actions[^\{]*\.layer-controls[^\{]*\{display:none\}')
+        self.assertIn('id="annualTimeline"', self.html)
+        self.assertIn('id="knowledgeCards"', self.html)
+        self.assertIn('id="advancedCatalogInput"', self.html)
+
 
 if __name__ == "__main__":
     unittest.main()
