@@ -125,3 +125,51 @@ test('advanced layers reach a real scene once and are reapplied after a rebuild'
   assert.equal(calls.filter((call) => call[0] === 'advancedMilkyWay').length, 2);
   assert.equal(calls.filter((call) => call[0] === 'starCatalog').length, 2);
 });
+
+test('no WebGL keeps shared state updates and asks the panel for a 2D fallback', () => {
+  const s = setup(), fallback = [], updates = [];
+  s.education.EducationPanel = { create: () => ({ update: (_, state) => updates.push(state), setFallback: (state, code, retry) => fallback.push([state, code, retry]), dispose() {} }) };
+  const handle = App.start({ AstroEducation: s.education, document: s.document, window: s.window, timeController: s.controller });
+  assert.equal(handle.available, false);
+  assert.equal(fallback[0][1], 'WEBGL_UNAVAILABLE');
+  s.emit();
+  assert.equal(updates.length, 2);
+  assert.match(s.nodes.appStatus.textContent, /此设备无法显示 3D 场景/);
+});
+
+test('a 3D render failure falls back without pausing the shared clock', () => {
+  const s = setup(), fallback = [];
+  s.host.renderFrame = () => { throw new Error('render'); };
+  const panel = { update() {}, setFallback: (_, code, retry) => fallback.push([code, retry]), dispose() {} };
+  const handle = App.start({ AstroEducation: s.education, document: s.document, window: s.window, THREE: {}, timeController: s.controller, scenes: s.scenes, host: s.host, educationPanel: panel });
+  assert.equal(handle.available, false);
+  assert.deepEqual(fallback[0], ['THREE_RENDER_FAILED', true]);
+  assert.equal(s.controller.getState().playing, false);
+  assert.match(s.nodes.appStatus.textContent, /THREE_RENDER_FAILED/);
+});
+
+test('computation failure pauses playback and retains the last good learning state', () => {
+  const s = setup(), states = [];
+  let fail = false;
+  s.education.WorldState.create = (input) => { if (fail) throw new Error('bad data'); return Object.freeze({ ...input, displayTime: {}, sun: { longitudeDeg: 1 }, solarTerms: {} }); };
+  const panel = { update: (_, state) => states.push(state), dispose() {} };
+  App.start({ AstroEducation: s.education, document: s.document, window: s.window, THREE: {}, timeController: s.controller, scenes: s.scenes, host: s.host, educationPanel: panel });
+  s.controller.play(); const lastGood = states[states.length - 1]; fail = true; s.emit();
+  assert.equal(s.controller.getState().playing, false);
+  assert.strictEqual(states[states.length - 1], lastGood);
+  assert.match(s.nodes.appStatus.textContent, /COMPUTATION_FAILED/);
+});
+
+test('retry recreates 3D without rebuilding the clock and preserves fallback on failure', () => {
+  const s = setup(), fallback = [], clear = [];
+  let attempts = 0;
+  const panel = { update() {}, setFallback: (_, code) => fallback.push(code), clearFallback: () => clear.push('clear'), dispose() {} };
+  s.education.SceneHost.create = () => (++attempts === 1 ? { available: false } : s.host);
+  const handle = App.start({ AstroEducation: s.education, document: s.document, window: s.window, THREE: {}, timeController: s.controller, scenes: s.scenes, educationPanel: panel });
+  assert.equal(handle.available, false);
+  assert.equal(handle.retry3d(), true);
+  assert.equal(attempts, 2);
+  assert.equal(clear.length, 1);
+  s.host.dispose();
+  handle.stop();
+});

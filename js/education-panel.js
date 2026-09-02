@@ -21,6 +21,59 @@
     });
   }
   function field(object, path) { return path.reduce((value, key) => value && value[key], object); }
+  function normalizeAngle(value) { return ((Number(value) % 360) + 360) % 360; }
+  function fallbackViewModel(state, code) {
+    const input = state || {}, sun = input.sun || {}, moon = input.moon || {};
+    const sunAngleDeg = normalizeAngle(sun.longitudeDeg);
+    const moonAngleDeg = normalizeAngle(moon.longitudeDeg);
+    return Object.freeze({
+      code: code || 'WEBGL_UNAVAILABLE',
+      reason: '此设备无法显示 3D 场景，下面仍可学习日期、节气与月相。',
+      showTimeline: true,
+      showCards: true,
+      eclipticDiagram: Object.freeze({
+        sunAngleDeg,
+        moonAngleDeg,
+        moonRelativeAngleDeg: normalizeAngle(moonAngleDeg - sunAngleDeg),
+        moonLatitudeDeg: Number.isFinite(moon.latitudeDeg) ? moon.latitudeDeg : 0,
+        phaseName: moon.phaseName || '月相'
+      })
+    });
+  }
+  function svgNode(documentRef, name, attrs, text) {
+    const node = documentRef.createElementNS ? documentRef.createElementNS('http://www.w3.org/2000/svg', name) : documentRef.createElement(name);
+    Object.keys(attrs || {}).forEach(function (key) { node.setAttribute(key, attrs[key]); });
+    if (text != null) node.textContent = text;
+    return node;
+  }
+  function diagramPoint(angleDeg, radius) {
+    const rad = (normalizeAngle(angleDeg) - 90) * Math.PI / 180;
+    return { x: 160 + radius * Math.cos(rad), y: 110 + radius * Math.sin(rad) };
+  }
+  function renderFallback(container, model, options) {
+    if (!container || !model) return null;
+    const documentRef = options && options.document || container.ownerDocument;
+    if (!documentRef) return null;
+    while (container.firstChild) container.removeChild(container.firstChild);
+    const diagram = model.eclipticDiagram, label = `二维日地月示意：太阳黄经 ${finite(diagram.sunAngleDeg, 1)}°，月球相对太阳 ${finite(diagram.moonRelativeAngleDeg, 1)}°。`;
+    const svg = svgNode(documentRef, 'svg', { viewBox: '0 0 320 220', role: 'img', 'aria-label': label, class: 'fallback-diagram' });
+    svg.appendChild(svgNode(documentRef, 'title', { id: 'fallbackDiagramTitle' }, '日地月二维学习示意'));
+    svg.appendChild(svgNode(documentRef, 'desc', { id: 'fallbackDiagramDescription' }, label + ' 实线是地球轨道，虚线是春分点 0° 射线，弧线标出太阳黄经。'));
+    const earth = diagramPoint(diagram.sunAngleDeg, 68), moon = diagramPoint(diagram.moonRelativeAngleDeg, 25);
+    svg.appendChild(svgNode(documentRef, 'line', { x1: 160, y1: 110, x2: 160, y2: 28, class: 'fallback-zero-ray' }));
+    svg.appendChild(svgNode(documentRef, 'text', { x: 166, y: 32, class: 'fallback-label' }, '春分点 0°'));
+    svg.appendChild(svgNode(documentRef, 'circle', { cx: 160, cy: 110, r: 68, class: 'fallback-orbit' }));
+    svg.appendChild(svgNode(documentRef, 'path', { d: `M 160 42 A 68 68 0 ${diagram.sunAngleDeg > 180 ? 1 : 0} 1 ${earth.x.toFixed(1)} ${earth.y.toFixed(1)}`, class: 'fallback-longitude-arc' }));
+    svg.appendChild(svgNode(documentRef, 'circle', { cx: 160, cy: 110, r: 13, class: 'fallback-sun' }));
+    svg.appendChild(svgNode(documentRef, 'text', { x: 143, y: 115, class: 'fallback-label' }, '太阳'));
+    svg.appendChild(svgNode(documentRef, 'circle', { cx: earth.x.toFixed(1), cy: earth.y.toFixed(1), r: 8, class: 'fallback-earth' }));
+    svg.appendChild(svgNode(documentRef, 'text', { x: (earth.x + 10).toFixed(1), y: (earth.y + 4).toFixed(1), class: 'fallback-label' }, '地球'));
+    svg.appendChild(svgNode(documentRef, 'line', { x1: earth.x.toFixed(1), y1: earth.y.toFixed(1), x2: (earth.x + (moon.x - 160)).toFixed(1), y2: (earth.y + (moon.y - 110)).toFixed(1), class: 'fallback-moon-line' }));
+    svg.appendChild(svgNode(documentRef, 'circle', { cx: (earth.x + (moon.x - 160)).toFixed(1), cy: (earth.y + (moon.y - 110)).toFixed(1), r: 4, class: 'fallback-moon' }));
+    svg.appendChild(svgNode(documentRef, 'text', { x: 12, y: 202, class: 'fallback-label' }, `太阳黄经 ${finite(diagram.sunAngleDeg, 1)}°；${diagram.phaseName}`));
+    container.appendChild(svg);
+    return svg;
+  }
   function finite(value, digits) { return Number.isFinite(value) ? Number(value).toFixed(digits == null ? 1 : digits) : '—'; }
   function durationText(milliseconds) {
     if (!Number.isFinite(milliseconds)) return '—';
@@ -222,6 +275,8 @@
     const onSelectedScene = typeof config.onSelectedScene === 'function' ? config.onSelectedScene : function () {};
     const onLayerChange = typeof config.onLayerChange === 'function' ? config.onLayerChange : function () {};
     const onAdvancedLayer = typeof config.onAdvancedLayer === 'function' ? config.onAdvancedLayer : function () { return false; };
+    const onRetry3d = typeof config.onRetry3d === 'function' ? config.onRetry3d : function () {};
+    const onError = typeof config.onError === 'function' ? config.onError : function () {};
     const StarCatalog = config.StarCatalog || {};
     const listeners = [], nodes = {};
     let previous = null, highlightTimer = null, disposed = false, lastStatus = null, timelineKey = null, timelineAnnual = null, renderedTimeline = null, advancedInitialized = false, catalogReader = null;
@@ -291,10 +346,30 @@
           advancedSummary(result); advancedStatus(`本地导入完成：${result.acceptedRows} 条可用，${result.skippedRows} 条已跳过。`);
           if (!onAdvancedLayer('starCatalog', result.stars)) advancedStatus(`本地导入完成：${result.acceptedRows} 条可用，${result.skippedRows} 条已跳过。三维场景不可用，显示摘要。`);
           onRenderRequested();
-        } catch (error) { advancedStatus('CSV 解析失败：' + (error && error.message || '未知错误')); }
+        } catch (_) { advancedStatus('CSV 解析失败；仍可继续使用主要学习内容。'); onError('ADVANCED_CSV_FAILED'); }
         finally { if (catalogReader === reader) catalogReader = null; }
       };
       reader.readAsText(file, 'utf-8');
+    }
+    function setFallback(worldState, code, retryAvailable) {
+      const container = get('fallbackDiagram'), sceneGrid = get('sceneGrid') || get('astronomyCanvas') && get('astronomyCanvas').parentElement;
+      const retry = get('retry3dButton'), canvas = get('astronomyCanvas'), labels = get('labelLayer');
+      if (sceneGrid && sceneGrid.classList) sceneGrid.classList.add('scene-fallback-active');
+      if (canvas && canvas.style) canvas.style.display = 'none';
+      if (labels && labels.style) labels.style.display = 'none';
+      if (container) renderFallback(container, fallbackViewModel(worldState, code), { document: root });
+      if (retry) { retry.disabled = !retryAvailable; retry.hidden = !retryAvailable; }
+      ['showOrbit', 'showLabels', 'showObserver', 'showDayNight', 'advancedMilkyWay', 'advancedMansions', 'resetBtn', 'snapBtn'].forEach(function (id) { const node = get(id); if (node) node.disabled = true; });
+    }
+    function clearFallback() {
+      const container = get('fallbackDiagram'), sceneGrid = get('sceneGrid') || get('astronomyCanvas') && get('astronomyCanvas').parentElement;
+      const retry = get('retry3dButton'), canvas = get('astronomyCanvas'), labels = get('labelLayer');
+      if (sceneGrid && sceneGrid.classList) sceneGrid.classList.remove('scene-fallback-active');
+      if (canvas && canvas.style) canvas.style.display = '';
+      if (labels && labels.style) labels.style.display = '';
+      if (container) while (container.firstChild) container.removeChild(container.firstChild);
+      if (retry) retry.hidden = true;
+      ['showOrbit', 'showLabels', 'showObserver', 'showDayNight', 'advancedMilkyWay', 'advancedMansions', 'resetBtn', 'snapBtn'].forEach(function (id) { const node = get(id); if (node) node.disabled = false; });
     }
     function bind() {
       listen('dateTimeInput', 'change', applyDateTime); listen('previousDayButton', 'click', () => clock.stepDays(-1)); listen('nextDayButton', 'click', () => clock.stepDays(1)); listen('todayButton', 'click', () => clock.setInstant(now()));
@@ -308,6 +383,7 @@
       listen('advancedMilkyWay', 'change', function () { toggleAdvanced('advancedMilkyWay'); });
       listen('advancedMansions', 'change', function () { toggleAdvanced('advancedMansions'); });
       listen('advancedCatalogInput', 'change', readCatalogFile);
+      listen('retry3dButton', 'click', onRetry3d);
       listen('heliocentricSceneBtn', 'click', () => onSelectedScene('heliocentric')); listen('geocentricSceneBtn', 'click', () => onSelectedScene('geocentric'));
       listen('yearLookupInput', 'change', function () { renderYearLookup(); });
       listen('sixtyYearRingToggle', 'click', function () {
@@ -345,14 +421,16 @@
       if (timelineKey !== key) {
         timelineKey = key; timelineAnnual = null; renderedTimeline = null;
         try { timelineAnnual = annualFromState(worldState, clockState, display.year, display.timeZone || worldState.timeZone || clockState.timeZone); }
-        catch (error) { if (notice) notice.textContent = '本年度时间轴数据暂不可用；日期与当前历法读数仍可学习。'; return; }
+        catch (_) { if (notice) notice.textContent = '本年度时间轴数据暂不可用；日期与当前历法读数仍可学习。'; onError('TIMELINE_RENDER_FAILED'); return; }
       }
       if (!timelineAnnual) { if (notice) notice.textContent = '本年度时间轴数据暂不可用；日期与当前历法读数仍可学习。'; return; }
-      const model = timelineViewModel(timelineAnnual, worldState.instantUtc, display);
-      if (!model) { if (notice) notice.textContent = '该时区或年份不在教学时间轴的可用范围。'; return; }
-      if (notice) notice.textContent = '';
-      if (!renderedTimeline) { renderedTimeline = renderTimeline(container, model, { clock, document: root, timeZone: key.split('|')[1] }); }
-      else updateTimelinePointer(renderedTimeline, model);
+      try {
+        const model = timelineViewModel(timelineAnnual, worldState.instantUtc, display);
+        if (!model) { if (notice) notice.textContent = '该时区或年份不在教学时间轴的可用范围。'; return; }
+        if (notice) notice.textContent = '';
+        if (!renderedTimeline) { renderedTimeline = renderTimeline(container, model, { clock, document: root, timeZone: key.split('|')[1] }); }
+        else updateTimelinePointer(renderedTimeline, model);
+      } catch (_) { if (notice) notice.textContent = '本年度时间轴数据暂不可用；日期与当前历法读数仍可学习。'; onError('TIMELINE_RENDER_FAILED'); }
     }
     function update(clockState, worldState) {
       if (disposed) return; const model = controlViewModel({ clock: clockState, displayTime: worldState && worldState.displayTime });
@@ -366,7 +444,7 @@
       onRenderRequested();
     }
     bind();
-    return Object.freeze({ update, dispose: function () { if (disposed) return; disposed = true; const reader = catalogReader; catalogReader = null; if (reader && typeof reader.abort === 'function') reader.abort(); if (highlightTimer) timers.clearTimeout(highlightTimer); listeners.splice(0).forEach((item) => item[0].removeEventListener(item[1], item[2])); } });
+    return Object.freeze({ update, setFallback, clearFallback, dispose: function () { if (disposed) return; disposed = true; const reader = catalogReader; catalogReader = null; if (reader && typeof reader.abort === 'function') reader.abort(); if (highlightTimer) timers.clearTimeout(highlightTimer); listeners.splice(0).forEach((item) => item[0].removeEventListener(item[1], item[2])); } });
   }
-  return Object.freeze({ controlViewModel, boundaryChanges, timelineViewModel, lunarSegmentView, timelineScrubController, renderTimeline, currentMomentCardView, solarSeasonCardView, calendarMoonCardView, ganzhiCardView, observerCardView, whyCardView, yearLookupView, create });
+  return Object.freeze({ controlViewModel, boundaryChanges, timelineViewModel, lunarSegmentView, timelineScrubController, renderTimeline, fallbackViewModel, renderFallback, currentMomentCardView, solarSeasonCardView, calendarMoonCardView, ganzhiCardView, observerCardView, whyCardView, yearLookupView, create });
 });

@@ -246,6 +246,30 @@ test('advanced panel initializes once, toggles independent layers, and preserves
   assert.match(s.nodes.advancedCatalogStatus.textContent, /三维场景不可用/); panel.dispose();
 });
 
+test('fallback model retains learning data without WebGL', () => {
+  const model = Education.fallbackViewModel({
+    sun: { longitudeDeg: 315, declinationDeg: -16 },
+    moon: { longitudeDeg: 330, latitudeDeg: 3, phaseName: '娥眉月' },
+    support: { astronomy: true }
+  }, 'WEBGL_UNAVAILABLE');
+  assert.equal(model.showTimeline, true);
+  assert.equal(model.showCards, true);
+  assert.equal(model.reason, '此设备无法显示 3D 场景，下面仍可学习日期、节气与月相。');
+  assert.equal(model.eclipticDiagram.sunAngleDeg, 315);
+  assert.equal(model.eclipticDiagram.moonRelativeAngleDeg, 15);
+});
+
+test('fallback diagram has an accessible non-color SVG explanation', () => {
+  const rendered = renderDocument();
+  const model = Education.fallbackViewModel({ sun: { longitudeDeg: 90 }, moon: { longitudeDeg: 180, phaseName: '满月' } }, 'THREE_RENDER_FAILED');
+  Education.renderFallback(rendered.container, model, { document: rendered.document });
+  const all = descendants(rendered.container), svg = all.find((item) => item.nodeName === 'svg');
+  assert.equal(svg.getAttribute('role'), 'img');
+  assert.match(svg.getAttribute('aria-label'), /太阳黄经/);
+  assert.ok(all.some((item) => item.nodeName === 'title'));
+  assert.ok(all.some((item) => /春分点 0°/.test(item.textContent)));
+});
+
 test('catalog readers ignore stale callbacks and disposal callbacks', () => {
   const s = setup(), calls = [], readers = [];
   class Reader { constructor() { readers.push(this); this.result = ''; this.aborted = false; } readAsText() {} abort() { this.aborted = true; if (this.onabort) this.onabort(); } }
