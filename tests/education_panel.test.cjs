@@ -13,6 +13,29 @@ function node(value) {
   };
 }
 
+function renderDocument() {
+  function element(name) {
+    const listeners = {}, attributes = {};
+    const value = {
+      nodeName: name, children: [], style: {}, className: '', textContent: '', clientWidth: 300, scrollLeft: 0,
+      setAttribute(key, item) { attributes[key] = String(item); }, getAttribute(key) { return attributes[key]; },
+      appendChild(child) { this.children.push(child); child.parentNode = this; return child; },
+      removeChild(child) { this.children.splice(this.children.indexOf(child), 1); child.parentNode = null; },
+      addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
+      emit(type, event) { (listeners[type] || []).forEach((fn) => fn(event || { preventDefault() {} })); }
+    };
+    Object.defineProperty(value, 'firstChild', { get() { return this.children[0] || null; } });
+    Object.defineProperty(value, 'ownerDocument', { value: document });
+    return value;
+  }
+  const document = { createElement: element, createElementNS: (_, name) => element(name) };
+  return { document, container: element('div') };
+}
+
+function descendants(root) {
+  return root.children.reduce((all, child) => all.concat(child, descendants(child)), []);
+}
+
 function setup() {
   const ids = ['dateTimeInput', 'previousDayButton', 'todayButton', 'nextDayButton', 'playPauseButton', 'speedSelect', 'timeZoneSelect', 'resolvedTimeZone', 'locationSelect', 'latitudeInput', 'longitudeInput', 'showOrbit', 'showLabels', 'showObserver', 'showDayNight', 'heliocentricSceneBtn', 'geocentricSceneBtn', 'appStatus', 'timelineScroll', 'timelineNotice'];
   const nodes = Object.fromEntries(ids.map((id) => [id, node()]));
@@ -89,6 +112,25 @@ test('timeline data is requested once per selected local year and timezone, not 
   panel.update(s.clock.getState(), { instantUtc: 300, displayTime: { year: 2027, month: 1, day: 1, timeZone: 'Asia/Shanghai' } });
   assert.deepEqual(requested, [[2026, 'Asia/Shanghai'], [2027, 'Asia/Shanghai']]);
   panel.dispose();
+});
+
+test('rendered term controls remain focusable and share one hover/focus tooltip outside an image leaf', () => {
+  const rendered = renderDocument();
+  const model = Education.timelineViewModel({
+    startUtc: 0, endUtc: 1000, gregorian: [],
+    solarTerms: [{ name: '立春', instantUtc: 200, startRatio: 0.2 }],
+    lunarMonths: []
+  }, 250, { year: 2026, month: 1, day: 2 });
+  const result = Education.renderTimeline(rendered.container, model, { document: rendered.document, timeZone: 'Asia/Shanghai', clock: {} });
+  const all = descendants(rendered.container), svg = all.find((item) => item.nodeName === 'svg'), term = all.find((item) => item.textContent === '立春'), tooltip = all.find((item) => item.className === 'timeline-tooltip');
+  assert.equal(svg.getAttribute('role'), 'group');
+  assert.equal(term.getAttribute('role'), 'button');
+  assert.equal(term.getAttribute('tabindex'), '0');
+  assert.match(term.getAttribute('aria-label'), /立春/);
+  term.emit('mouseenter'); const hover = tooltip.textContent;
+  tooltip.textContent = ''; term.emit('focus'); assert.equal(tooltip.textContent, hover);
+  term.emit('keydown', { key: 'Enter', preventDefault() {} }); assert.equal(tooltip.textContent, hover);
+  assert.ok(result);
 });
 
 test('bindings change only the requested clock field and reject invalid custom locations', () => {

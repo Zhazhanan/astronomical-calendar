@@ -88,7 +88,9 @@
     toolbar.appendChild(tip);
     const zoomGroup = documentRef.createElement('div'); zoomGroup.className = 'timeline-zoom'; zoomGroup.setAttribute('aria-label', '时间轴缩放');
     toolbar.appendChild(zoomGroup); container.appendChild(toolbar);
-    const svg = svgNode(documentRef, 'svg', { viewBox: '0 0 1000 245', role: 'img', 'aria-label': '公历、二十四节气和农历统一年度时间轴', 'data-timeline-svg': 'true' });
+    const svg = svgNode(documentRef, 'svg', { viewBox: '0 0 1000 245', role: 'group', 'aria-labelledby': 'annualTimelineSvgTitle annualTimelineSvgDesc', 'data-timeline-svg': 'true' });
+    svg.appendChild(svgNode(documentRef, 'title', { id: 'annualTimelineSvgTitle' }, '公历、二十四节气和农历统一年度时间轴'));
+    svg.appendChild(svgNode(documentRef, 'desc', { id: 'annualTimelineSvgDesc' }, '各行使用同一真实 UTC 时间比例。节气名称可聚焦以查看时刻。'));
     const defs = svgNode(documentRef, 'defs'); const pattern = svgNode(documentRef, 'pattern', { id: 'lunarLeapDiagonal', width: 8, height: 8, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' });
     pattern.appendChild(svgNode(documentRef, 'rect', { width: 8, height: 8, fill: '#4c1d95' })); pattern.appendChild(svgNode(documentRef, 'line', { x1: 0, y1: 0, x2: 0, y2: 8, stroke: '#f8fafc', 'stroke-width': 2, opacity: .52 })); defs.appendChild(pattern); svg.appendChild(defs);
     const left = 70, width = 900, rowY = [55, 125, 195];
@@ -101,7 +103,8 @@
           const button = svgNode(documentRef, 'text', { x: start, y: rowY[rowIndex] - (index % 2 ? 14 : -25), class: 'timeline-term', tabindex: 0, role: 'button', 'aria-label': item.name + '，年度位置 ' + Math.round(item.startRatio * 100) + '%' }, item.name);
           const message = item.name + '：' + new Date(item.instantUtc).toLocaleString('zh-CN', { timeZone: config.timeZone || undefined, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
           function show() { tip.textContent = message; }
-          button.addEventListener('pointerenter', show); button.addEventListener('focus', show); svg.appendChild(svgNode(documentRef, 'circle', { cx: start, cy: rowY[rowIndex], r: 4, class: 'timeline-term-marker' })); svg.appendChild(button);
+          function activate(event) { if (event && (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar')) { if (event.preventDefault) event.preventDefault(); show(); } }
+          button.addEventListener('pointerenter', show); button.addEventListener('mouseenter', show); button.addEventListener('focus', show); button.addEventListener('keydown', activate); svg.appendChild(svgNode(documentRef, 'circle', { cx: start, cy: rowY[rowIndex], r: 4, class: 'timeline-term-marker' })); svg.appendChild(button);
         } else {
           const segment = svgNode(documentRef, 'rect', { x: start, y: rowY[rowIndex] - 15, width: Math.max(1, end - start), height: 30, class: row.kind === 'lunar' ? 'timeline-lunar-segment' : 'timeline-gregorian-segment', fill: item.pattern ? 'url(#lunarLeapDiagonal)' : '' });
           segment.setAttribute('aria-label', item.ariaLabel || item.label); svg.appendChild(segment);
