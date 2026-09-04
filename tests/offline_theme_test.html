@@ -12,7 +12,7 @@
 </style>
 </head>
 <body>
-<iframe id="target" src="../tiangan_dizhi_offline.html"></iframe>
+<iframe id="target"></iframe>
 <pre id="result" data-status="pending">主题检查运行中…</pre>
 <script>
 const frame = document.getElementById('target');
@@ -27,8 +27,65 @@ function luminance(color){
   return 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
 }
 
-frame.addEventListener('load', ()=>{
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+function countOverlappingPairs(elements){
+  const rectangles = elements
+    .filter(element=>{
+      const style = getComputedStyle(element);
+      return style.display !== 'none' && style.visibility !== 'hidden';
+    })
+    .map(element=>element.getBoundingClientRect());
+  let overlaps = 0;
+  for(let i=0;i<rectangles.length;i++){
+    for(let j=i+1;j<rectangles.length;j++){
+      const first = rectangles[i];
+      const second = rectangles[j];
+      if(Math.min(first.right,second.right)-Math.max(first.left,second.left) > 1 &&
+         Math.min(first.bottom,second.bottom)-Math.max(first.top,second.top) > 1){
+        overlaps++;
+      }
+    }
+  }
+  return overlaps;
+}
+
+function nextFrame(){
+  return new Promise(resolve=>requestAnimationFrame(resolve));
+}
+
+function loadImage(url){
+  return new Promise((resolve,reject)=>{
+    const image = new Image();
+    image.onload = ()=>resolve(image);
+    image.onerror = reject;
+    image.src = url;
+  });
+}
+
+async function countDifferentPixels(firstUrl, secondUrl){
+  const [first, second] = await Promise.all([loadImage(firstUrl), loadImage(secondUrl)]);
+  if(first.width !== second.width || first.height !== second.height) return Infinity;
+  const canvas = document.createElement('canvas');
+  canvas.width = first.width;
+  canvas.height = first.height;
+  const context = canvas.getContext('2d', {willReadFrequently:true});
+  context.drawImage(first, 0, 0);
+  const firstPixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(second, 0, 0);
+  const secondPixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  let differences = 0;
+  for(let i=0;i<firstPixels.length;i+=4){
+    if(Math.abs(firstPixels[i]-secondPixels[i]) + Math.abs(firstPixels[i+1]-secondPixels[i+1]) + Math.abs(firstPixels[i+2]-secondPixels[i+2]) > 24){
+      differences++;
+    }
+  }
+  return differences;
+}
+
+frame.addEventListener('load', async ()=>{
+  await nextFrame();
+  await nextFrame();
+  try{
     const doc = frame.contentDocument;
     const bodyStyle = getComputedStyle(doc.body);
     const uiStyle = getComputedStyle(doc.getElementById('ui'));
@@ -39,6 +96,25 @@ frame.addEventListener('load', ()=>{
     const smallestScreenLabel = screenLabels.length
       ? Math.min(...screenLabels.map(label=>parseFloat(getComputedStyle(label).fontSize)))
       : 0;
+    const overlappingLabelPairs = countOverlappingPairs(screenLabels);
+    let exportedUrl = '';
+    const linkPrototype = frame.contentWindow.HTMLAnchorElement.prototype;
+    const originalLinkClick = linkPrototype.click;
+    linkPrototype.click = function(){ exportedUrl = this.href; };
+    doc.getElementById('snapBtn').click();
+    linkPrototype.click = originalLinkClick;
+    const rawCanvasUrl = doc.querySelector('#canvasContainer canvas').toDataURL('image/png');
+    const exportedPixelDifferences = exportedUrl
+      ? await countDifferentPixels(rawCanvasUrl, exportedUrl)
+      : 0;
+    frame.style.width = '390px';
+    frame.style.height = '844px';
+    frame.style.right = 'auto';
+    frame.style.bottom = 'auto';
+    await new Promise(resolve=>setTimeout(resolve, 120));
+    const narrowFrameRect = frame.getBoundingClientRect();
+    const narrowCanvasRect = doc.querySelector('#canvasContainer canvas').getBoundingClientRect();
+    const narrowHudStyle = getComputedStyle(doc.getElementById('hud'));
     const checks = [
       ['页面采用深色背景', luminance(parseColor(bodyStyle.backgroundColor)) <= 32],
       ['控制面板采用浅色文字', luminance(parseColor(uiStyle.color)) >= 210],
@@ -46,14 +122,25 @@ frame.addEventListener('load', ()=>{
       ['控制标签字号至少 14px', parseFloat(labelStyle.fontSize) >= 14],
       ['按钮高度至少 36px', parseFloat(buttonStyle.height) >= 36],
       ['Three.js 画布正常创建', Boolean(doc.querySelector('#canvasContainer canvas'))],
+      ['二十八宿星表导入入口已移除', !doc.querySelector('input[type="file"]') && !doc.getElementById('fetchStarsBtn')],
       ['天球文字使用屏幕空间标签', screenLabels.length >= 75],
       ['天球文字最小字号至少 14px', smallestScreenLabel >= 14],
+      [`可见天球文字互不遮挡（重叠 ${overlappingLabelPairs} 对）`, overlappingLabelPairs === 0],
+      [`导出的 PNG 合成可见天球文字（差异像素 ${exportedPixelDifferences}，导出长度 ${exportedUrl.length}，原图长度 ${rawCanvasUrl.length}）`, exportedPixelDifferences >= 100],
+      ['窄屏测试视口生效', Math.abs(narrowFrameRect.width-390) <= 1 && Math.abs(narrowFrameRect.height-844) <= 1],
+      [`窄屏画布跟随视口调整（${narrowCanvasRect.width}×${narrowCanvasRect.height}）`, Math.abs(narrowCanvasRect.width-390) <= 1 && Math.abs(narrowCanvasRect.height-844) <= 1],
+      ['窄屏数据面板切换为底部网格', narrowHudStyle.display === 'grid' && narrowHudStyle.bottom === '12px'],
     ];
     const failures = checks.filter(([, passed])=>!passed).map(([name])=>'FAIL: ' + name);
     result.dataset.status = failures.length ? 'fail' : 'pass';
     result.textContent = failures.length ? failures.join('\n') : 'PASS: 深色星空主题可读性检查通过';
-  }));
+  }catch(error){
+    result.dataset.status = 'fail';
+    result.textContent = 'FAIL: ' + error.message;
+  }
 });
+
+frame.src = '../tiangan_dizhi_offline.html?theme-test=' + Date.now();
 
 setTimeout(()=>{
   if(result.dataset.status === 'pending'){

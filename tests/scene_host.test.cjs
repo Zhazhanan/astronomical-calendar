@@ -167,6 +167,35 @@ test('production host uses one renderer, independent interaction targets, measur
   assert.equal(environment.observer.disconnected, true);
 });
 
+test('visible CSS viewports resync a stale canvas buffer before rendering', () => {
+  const environment = productionFakes();
+  const sceneCalls = [];
+  const host = SceneHost.create({
+    canvas: environment.canvas,
+    containers: environment.containers,
+    THREE: environment.THREE,
+    scenes: sceneEntries([], sceneCalls, environment.cameras),
+    window: environment.window
+  });
+  environment.canvas.width = 300;
+  environment.canvas.height = 150;
+  host.renderFrame(Object.freeze({ instantUtc: 0 }));
+  assert.equal(environment.canvas.width, 1050);
+  assert.equal(environment.canvas.height, 525);
+  assert.deepEqual(sceneCalls, ['heliocentric', 'geocentric']);
+  host.dispose();
+});
+
+test('resizing redraws a paused scene so labels use the new viewport dimensions', () => {
+  const environment = productionFakes(), calls = [];
+  const host = SceneHost.create({ canvas: environment.canvas, containers: environment.containers, THREE: environment.THREE, scenes: sceneEntries([], calls, environment.cameras), window: environment.window, ResizeObserver: environment.ResizeObserver });
+  host.renderFrame(Object.freeze({ instantUtc: 42 }));
+  calls.length = 0;
+  environment.observer.callback();
+  assert.deepEqual(calls, ['heliocentric', 'geocentric']);
+  host.dispose();
+});
+
 test('layout mode updates the real grid and mobile hides the non-selected interaction layer', () => {
   const environment = productionFakes();
   const host = SceneHost.create({
@@ -347,7 +376,7 @@ function productionFakes() {
       constructor({ canvas: target }) { this.domElement = target; this.viewports = []; this.scissors = []; renderers.push(this); }
       setScissorTest() {}
       setPixelRatio(value) { this.pixelRatio = value; }
-      setSize(width, height) { this.domElement.width = width; this.domElement.height = height; }
+      setSize(width, height) { this.domElement.width = width * this.pixelRatio; this.domElement.height = height * this.pixelRatio; }
       setViewport(...values) { this.viewports.push(values); }
       setScissor(...values) { this.scissors.push(values); }
       render() {}

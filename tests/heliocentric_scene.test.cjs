@@ -155,6 +155,24 @@ test('create builds static teaching objects, updates in place, and releases reso
   assert.equal(THREE.disposedTextures, 1);
 });
 
+test('heliocentric labels are projected inside their own viewport', () => {
+  const THREE = createFakeThree();
+  const labels = [];
+  const interactionElement = elementWithRect({ left: 0, top: 100, width: 300, height: 300 });
+  const labelLayer = { appendChild: (label) => labels.push(label), getBoundingClientRect: () => ({ left: 0, top: 0, width: 600, height: 600 }) };
+  const scene = Heliocentric.create({ THREE, interactionElement, labelLayer });
+  assert.equal(labels.every((label) => label.style.visibility === 'hidden'), true);
+  scene.update(state);
+  const draws = [];
+  scene.render({ render: (...args) => draws.push(args) });
+  assert.deepEqual(draws, [[scene.scene, scene.camera]]);
+  assert.equal(labels[0].style.left, '150.00px');
+  assert.equal(labels[0].style.top, '218.00px');
+  assert.equal(labels[0].style.visibility, 'visible');
+  assert.notEqual(labels[0].style.top, labels[5].style.top);
+  scene.dispose();
+});
+
 test('procedural glow texture receives a local 64px radial canvas', () => {
   const priorDocument = global.document;
   const calls = [];
@@ -199,6 +217,10 @@ function rotateY(vector, radians) {
   };
 }
 
+function elementWithRect(rect) {
+  return { style: {}, getBoundingClientRect: () => rect };
+}
+
 function createFakeThree() {
   const stats = { disposedGeometries: 0, disposedMaterials: 0, disposedTextures: 0, controlsDisposed: 0, vectorCreations: 0 };
   class Vector3 {
@@ -208,9 +230,11 @@ function createFakeThree() {
     normalize() { const length = Math.hypot(this.x, this.y, this.z) || 1; return this.set(this.x / length, this.y / length, this.z / length); }
     multiplyScalar(value) { return this.set(this.x * value, this.y * value, this.z * value); }
     subVectors(a, b) { return this.set(a.x - b.x, a.y - b.y, a.z - b.z); }
+    project() { return this; }
   }
   class Object3D {
     constructor() { this.children = []; this.position = new Vector3(); this.rotation = new Vector3(); this.scale = new Vector3(1, 1, 1); this.quaternion = { setFromUnitVectors: () => this.quaternion }; this.userData = {}; }
+    localToWorld(vector) { return vector.set(vector.x + this.position.x, vector.y + this.position.y, vector.z + this.position.z); }
     add(...items) { this.children.push(...items); }
   }
   class Group extends Object3D {}

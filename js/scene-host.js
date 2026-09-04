@@ -82,6 +82,22 @@
     };
   }
 
+  function containerRectToViewport(containerRect, canvasRect) {
+    const canvasWidth = safeDimension(canvasRect && canvasRect.width);
+    const canvasHeight = safeDimension(canvasRect && canvasRect.height);
+    if (!canvasWidth || !canvasHeight || !containerRect) return { x: 0, y: 0, width: 0, height: 0 };
+    const left = clamp(containerRect.left - canvasRect.left, 0, canvasWidth);
+    const right = clamp(containerRect.left + containerRect.width - canvasRect.left, 0, canvasWidth);
+    const top = clamp(containerRect.top - canvasRect.top, 0, canvasHeight);
+    const bottom = clamp(containerRect.top + containerRect.height - canvasRect.top, 0, canvasHeight);
+    return {
+      x: left,
+      y: canvasHeight - bottom,
+      width: Math.max(0, right - left),
+      height: Math.max(0, bottom - top)
+    };
+  }
+
   function clamp(value, low, high) {
     return Math.max(low, Math.min(high, value));
   }
@@ -136,21 +152,22 @@
     let lastState = null;
     let resizeObserver = null;
     const listeners = [];
+    const sceneRuntime = {};
 
     function prepareScenes() { SCENE_IDS.forEach(function(id) {
       const scene = scenes[id];
       const interaction = scene && (scene.interactionElement || (containers[id] && containers[id].querySelector && containers[id].querySelector('.scene-interaction')));
-      if (scene && interaction) scene.interactionElement = interaction;
-      if (scene && interaction && !scene.controls && typeof scene.createControls === 'function') {
-        scene.controls = scene.createControls(interaction);
-      }
+      const ownsControls = !!(scene && interaction && !scene.controls && typeof scene.createControls === 'function');
+      // Scene APIs may be frozen; host-owned DOM bindings stay outside them.
+      sceneRuntime[id] = { interaction: interaction, controls: ownsControls ? scene.createControls(interaction) : scene && scene.controls, ownsControls: ownsControls };
     }); }
 
     function disposeScenes(sceneSet) {
       SCENE_IDS.forEach(function(id) {
         const scene = sceneSet[id];
+        const runtime = sceneRuntime[id];
         if (scene && typeof scene.dispose === 'function') scene.dispose();
-        else if (scene && scene.controls && typeof scene.controls.dispose === 'function') scene.controls.dispose();
+        if (runtime && runtime.controls && (runtime.ownsControls || !scene || typeof scene.dispose !== 'function') && typeof runtime.controls.dispose === 'function') runtime.controls.dispose();
       });
     }
 
@@ -174,9 +191,24 @@
       const height = safeDimension(rect && rect.height);
       if (!width || !height) return;
       const mobile = layoutMode === 'mobile';
+      resizeRenderer(width, height, mobile);
+      applyLayout(getLayout());
+      if (lastState) renderFrame(lastState);
+    }
+
+    function resizeRenderer(width, height, mobile) {
       renderer.setPixelRatio(cappedPixelRatio(hostWindow && hostWindow.devicePixelRatio, mobile));
       renderer.setSize(width, height, false);
-      applyLayout(getLayout());
+    }
+
+    function ensureRendererSize() {
+      const rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : null;
+      const width = safeDimension(rect && rect.width);
+      const height = safeDimension(rect && rect.height);
+      if (!width || !height) return false;
+      const ratio = cappedPixelRatio(hostWindow && hostWindow.devicePixelRatio, layoutMode === 'mobile');
+      if (canvas.width !== Math.floor(width * ratio) || canvas.height !== Math.floor(height * ratio)) resizeRenderer(width, height, layoutMode === 'mobile');
+      return true;
     }
 
     function applyLayout(viewports) {
@@ -188,7 +220,7 @@
         }
         if (container && typeof container.setAttribute === 'function') container.setAttribute('aria-hidden', String(!viewport.visible));
         const scene = scenes[viewport.id];
-        const interaction = scene && scene.interactionElement;
+        const interaction = sceneRuntime[viewport.id] && sceneRuntime[viewport.id].interaction;
         if (interaction && interaction.style) interaction.style.pointerEvents = viewport.visible ? '' : 'none';
         if (scene && typeof scene.setLabelsVisible === 'function') scene.setLabelsVisible(viewport.visible);
       });
@@ -210,25 +242,28 @@
       if (!container || !canvasRect || !container.getBoundingClientRect) return null;
       const rect = container.getBoundingClientRect();
       const scissor = containerRectToScissor(rect, canvasRect, { width: canvas.width, height: canvas.height });
-      return { rect: rect, scissor: scissor };
+      const viewport = containerRectToViewport(rect, canvasRect);
+      return { rect: rect, scissor: scissor, viewport: viewport };
     }
 
     function renderFrame(worldState) {
       if (disposed || contextLostState) return;
+      if (!ensureRendererSize()) return;
       lastState = worldState || lastState;
       getLayout().filter(function(viewport) { return viewport.visible; }).forEach(function(viewport) {
         const scene = scenes[viewport.id];
         const measured = measuredViewport(viewport.id);
-        if (!scene || !measured || !measured.scissor.width || !measured.scissor.height) return;
-        const scissor = measured.scissor;
-        renderer.setViewport(scissor.x, scissor.y, scissor.width, scissor.height);
-        renderer.setScissor(scissor.x, scissor.y, scissor.width, scissor.height);
+        if (!scene || !measured || !measured.viewport.width || !measured.viewport.height) return;
+        const viewportRect = measured.viewport;
+        renderer.setViewport(viewportRect.x, viewportRect.y, viewportRect.width, viewportRect.height);
+        renderer.setScissor(viewportRect.x, viewportRect.y, viewportRect.width, viewportRect.height);
         if (scene.camera) {
           scene.camera.aspect = measured.rect.width / measured.rect.height;
           if (typeof scene.camera.updateProjectionMatrix === 'function') scene.camera.updateProjectionMatrix();
         }
         if (typeof scene.update === 'function' && lastState) scene.update(lastState);
-        if (scene.controls && typeof scene.controls.update === 'function') scene.controls.update();
+        const controls = sceneRuntime[viewport.id] && sceneRuntime[viewport.id].controls;
+        if (controls && typeof controls.update === 'function') controls.update();
         if (typeof scene.render === 'function') scene.render(renderer, lastState, viewport);
         else if (scene.scene && scene.camera) renderer.render(scene.scene, scene.camera);
       });
@@ -268,7 +303,6 @@
         if (scenes[id] && typeof scenes[id].rebuild === 'function') scenes[id].rebuild();
       });
       resize();
-      if (lastState) renderFrame(lastState);
     }
 
     function dispose() {
@@ -341,6 +375,7 @@
     layoutModeForWidth: layoutModeForWidth,
     cappedPixelRatio: cappedPixelRatio,
     containerRectToScissor: containerRectToScissor,
+    containerRectToViewport: containerRectToViewport,
     create: create,
     createForTest: createForTest
   });

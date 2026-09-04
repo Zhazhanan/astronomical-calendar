@@ -76,10 +76,13 @@ test('labels project reusable anchors, lambda changes with state, and phase dire
 });
 test('labels are positioned inside their own right or lower viewport, not the full layer NDC', () => {
   const desktop = positionedScene({ left: 300, top: 0, width: 300, height: 300 }, { left: 0, top: 0, width: 600, height: 300 });
+  desktop.labels.forEach((label) => { label.style.display = label.textContent.startsWith('λ☉') ? '' : 'none'; });
   desktop.scene.scene.userData.labels.lambda.anchor.set(0, 0, 0); desktop.scene.updateLabelPositions();
   assert.equal(desktop.labels.find((label) => label.textContent.startsWith('λ☉')).style.left, '450.00px');
+  assert.equal(desktop.labels.find((label) => label.textContent.startsWith('λ☉')).style.visibility, 'visible');
   desktop.scene.dispose();
   const tablet = positionedScene({ left: 0, top: 300, width: 600, height: 300 }, { left: 0, top: 0, width: 600, height: 600 });
+  tablet.labels.forEach((label) => { label.style.display = label.textContent.startsWith('λ☉') ? '' : 'none'; });
   tablet.scene.scene.userData.labels.lambda.anchor.set(0, 0, 0); tablet.scene.updateLabelPositions();
   assert.equal(tablet.labels.find((label) => label.textContent.startsWith('λ☉')).style.top, '450.00px');
   tablet.scene.dispose();

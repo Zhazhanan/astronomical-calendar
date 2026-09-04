@@ -123,10 +123,15 @@
     }
 
     .main-panel {
+      position: relative;
+      z-index: 2;
       display: grid;
       grid-template-columns: minmax(0, 1.15fr) minmax(330px, .85fr);
-      overflow: hidden;
+      overflow: visible;
     }
+
+    .main-panel > .wheel-section { border-radius: 27px 0 0 27px; }
+    .main-panel > .info-section { position: relative; z-index: 1; border-radius: 0 27px 27px 0; }
 
     .wheel-section {
       position: relative;
@@ -343,6 +348,9 @@
     .control-button,
     .year-submit,
     .year-input,
+    .date-input,
+    .time-picker-select,
+    .timezone-toggle,
     .speed-select {
       min-height: 42px;
       border: 1px solid var(--line);
@@ -355,7 +363,7 @@
     .year-submit { cursor: pointer; }
     .control-button:hover, .year-submit:hover { border-color: rgba(165,59,43,.48); background: rgba(255,255,255,.72); }
     .control-button:active, .year-submit:active { transform: translateY(1px); }
-    .control-button:focus-visible, .year-submit:focus-visible, .year-input:focus-visible, .speed-select:focus-visible, .timeline-item:focus-visible, .cycle-slider:focus-visible { outline: 3px solid rgba(165,59,43,.22); outline-offset: 2px; }
+    .control-button:focus-visible, .year-submit:focus-visible, .year-input:focus-visible, .date-input:focus-visible, .time-picker-select:focus-visible, .timezone-toggle:focus-visible, .timezone-search:focus-visible, .speed-select:focus-visible, .timeline-item:focus-visible, .cycle-slider:focus-visible { outline: 3px solid rgba(165,59,43,.22); outline-offset: 2px; }
 
     .control-button { flex: 1; padding: 0 13px; }
     .control-button.primary { flex: 1.35; color: #fff9eb; border-color: var(--red); background: var(--red); }
@@ -365,7 +373,120 @@
     .year-input { width: 100%; padding: 0 13px; color: var(--ink); }
     .year-submit { padding: 0 16px; }
     .input-hint { min-height: 1.2em; margin: -4px 2px 0; color: var(--red); font-size: .74rem; }
-    .speed-select { padding: 0 9px; color: var(--ink); cursor: pointer; }
+    .speed-select, .time-picker-select {
+      padding: 0 34px 0 9px;
+      color: var(--ink);
+      appearance: none;
+      cursor: pointer;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath d='M3 5.25 7 9l4-3.75' fill='none' stroke='%2370281f' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 11px center;
+    }
+
+    .date-query {
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .date-query-label {
+      display: block;
+      margin: 0 0 7px 2px;
+      color: var(--muted);
+      font-size: .74rem;
+      font-weight: 700;
+      letter-spacing: .06em;
+    }
+
+    .date-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(165px, .62fr); gap: 8px; align-items: center; }
+
+    .timezone-field { min-width: 0; }
+    .timezone-picker { position: relative; min-width: 0; }
+    .timezone-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0 12px; color: var(--ink); cursor: pointer; }
+    .timezone-toggle::after { content: ""; width: 8px; height: 8px; margin-left: 12px; border-right: 1.5px solid var(--red-dark); border-bottom: 1.5px solid var(--red-dark); transform: rotate(45deg) translateY(-2px); transition: transform .18s ease; }
+    .timezone-toggle[aria-expanded="true"]::after { transform: rotate(225deg) translate(-2px, -2px); }
+    .timezone-panel { position: absolute; z-index: 12; top: calc(100% + 7px); right: 0; left: 0; padding: 6px; overflow: hidden; border: 1px solid rgba(112,40,31,.32); border-radius: 12px; background: var(--paper); box-shadow: 0 14px 30px rgba(75,54,25,.20); }
+    .timezone-search { width: 100%; min-height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: rgba(255,255,255,.45); font: inherit; font-size: .76rem; }
+    .timezone-options { max-height: 168px; margin-top: 5px; overflow-y: auto; }
+    .timezone-option { display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; color: var(--ink); background: transparent; cursor: pointer; font-size: .78rem; text-align: left; }
+    .timezone-option:hover, .timezone-option.active { color: var(--red-dark); background: rgba(165,59,43,.10); }
+    .timezone-empty { margin: 8px 10px; color: var(--muted); font-size: .76rem; }
+
+    .date-picker { position: relative; }
+
+    .date-input {
+      width: 100%;
+      padding: 0 48px 0 13px;
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .date-picker-toggle {
+      position: absolute;
+      top: 5px;
+      right: 5px;
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: 1px solid rgba(165,59,43,.32);
+      border-radius: 8px;
+      color: var(--red-dark);
+      background: rgba(165,59,43,.06);
+      cursor: pointer;
+    }
+
+    .date-picker-toggle:hover, .date-picker-toggle[aria-expanded="true"] { background: rgba(165,59,43,.13); border-color: rgba(165,59,43,.58); }
+    .date-picker-toggle:focus-visible, .calendar-nav:focus-visible, .calendar-day:focus-visible { outline: 3px solid rgba(165,59,43,.22); outline-offset: 2px; }
+    .calendar-icon { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.55; }
+
+    .date-picker-panel {
+      position: absolute;
+      z-index: 10;
+      top: calc(100% + 8px);
+      right: 0;
+      width: min(100%, 292px);
+      padding: 12px;
+      border: 1px solid rgba(112,40,31,.32);
+      border-radius: 14px;
+      color: var(--ink);
+      background:
+        linear-gradient(145deg, rgba(255,255,255,.5), transparent 55%),
+        var(--paper);
+      box-shadow: 0 14px 30px rgba(75, 54, 25, .20), inset 0 0 0 1px rgba(255,255,255,.5);
+    }
+
+    .calendar-header { display: grid; grid-template-columns: 30px 1fr 30px; align-items: center; margin-bottom: 9px; }
+    .calendar-month { color: var(--red-dark); font-family: var(--serif); font-size: 1rem; font-weight: 600; letter-spacing: .1em; text-align: center; }
+    .calendar-nav { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; color: var(--red-dark); background: transparent; cursor: pointer; }
+    .calendar-nav:hover { background: rgba(165,59,43,.1); }
+    .calendar-weekdays, .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; text-align: center; }
+    .calendar-weekdays { margin-bottom: 3px; color: var(--muted); font-size: .62rem; }
+    .calendar-day { aspect-ratio: 1; padding: 0; border: 1px solid transparent; border-radius: 50%; color: var(--ink); background: transparent; cursor: pointer; font-size: .78rem; }
+    .calendar-day:hover { border-color: rgba(165,59,43,.36); background: rgba(165,59,43,.09); }
+    .calendar-day.selected { color: #fff9eb; border-color: var(--red); background: var(--red); }
+    .calendar-blank { aspect-ratio: 1; }
+    .calendar-time { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: .7rem; }
+    .time-picker-fields { display: flex; align-items: center; gap: 5px; color: var(--red-dark); font-family: var(--serif); }
+    .time-picker-select { width: 66px; min-height: 32px; padding: 0 24px 0 8px; border-radius: 8px; background-position: right 7px center; }
+
+    .date-result {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 7px;
+      margin-top: 9px;
+    }
+
+    .pillar-result {
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255,255,255,.24);
+    }
+
+    .pillar-label { display: block; color: var(--muted); font-size: .65rem; }
+    .pillar-value { display: block; margin-top: 2px; color: var(--red-dark); font-family: var(--serif); font-size: 1.2rem; }
+    .date-hint { min-height: 1.2em; margin: 6px 2px 0; color: var(--red); font-size: .74rem; }
 
     .timeline-panel { min-width: 0; margin-top: 22px; padding: 26px 26px 22px; }
     .section-heading { display: flex; justify-content: space-between; gap: 18px; align-items: end; margin-bottom: 20px; }
@@ -544,6 +665,7 @@
       .control-button,
       .year-submit,
       .year-input,
+      .date-input,
       .speed-select {
         min-height: 34px;
         border-radius: 9px;
@@ -552,6 +674,15 @@
       .control-button { padding: 0 10px; }
       .year-form { gap: 6px; }
       .input-hint { min-height: .8em; margin-top: -5px; font-size: .64rem; }
+      .date-query { padding-top: 6px; }
+      .date-query-label { margin-bottom: 3px; font-size: .62rem; }
+      .date-result { gap: 5px; }
+      .date-picker-toggle { top: 3px; right: 3px; width: 28px; height: 28px; }
+      .date-picker-panel { top: calc(100% + 5px); padding: 9px; }
+      .pillar-result { padding: 4px 6px; border-radius: 8px; }
+      .pillar-label { font-size: .56rem; }
+      .pillar-value { margin-top: 0; font-size: .95rem; }
+      .date-hint { min-height: .8em; margin-top: 3px; font-size: .6rem; }
 
       .timeline-panel {
         margin-top: 0;
@@ -608,7 +739,8 @@
 
     @media (max-width: 900px) {
       .main-panel { grid-template-columns: 1fr; }
-      .wheel-section { min-height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      .main-panel > .wheel-section { min-height: auto; border-right: 0; border-bottom: 1px solid var(--line); border-radius: 27px 27px 0 0; }
+      .main-panel > .info-section { border-radius: 0 0 27px 27px; }
       .wheel-wrap { max-width: 580px; }
       .info-section { padding: 30px; }
       .timeline-viewport { overflow-x: auto; scrollbar-width: thin; }
@@ -620,7 +752,8 @@
       .cycle-seal { width: 64px; font-size: .76rem; }
       .subtitle { font-size: .86rem; }
       .panel { border-radius: 20px; }
-      .wheel-section { padding: 16px 8px 22px; }
+      .main-panel > .wheel-section { padding: 16px 8px 22px; border-radius: 19px 19px 0 0; }
+      .main-panel > .info-section { border-radius: 0 0 19px 19px; }
       .pointer { top: 0; }
       .wheel-legend { right: 18px; bottom: 12px; }
       .info-section { gap: 16px; padding: 25px 18px 22px; }
@@ -634,6 +767,8 @@
       .control-row { flex-wrap: wrap; }
       .control-button { min-width: 26%; }
       .speed-select { flex: 1; }
+      .date-form { grid-template-columns: 1fr; }
+      .date-result { grid-template-columns: repeat(2, 1fr); }
       .timeline-panel { padding: 22px 14px 18px; }
       .section-heading { display: block; }
       .section-heading p { margin-top: 5px; }
@@ -724,6 +859,34 @@
             <button class="year-submit" type="submit">查看</button>
           </form>
           <p id="input-hint" class="input-hint" role="alert"></p>
+          <div class="date-query">
+            <label class="date-query-label" for="date-input">按当地时区、日期、时刻查询四柱</label>
+            <form id="date-form" class="date-form">
+              <div class="date-picker">
+                <input id="date-input" class="date-input" type="text" inputmode="numeric" autocomplete="off" placeholder="YYYY-MM-DD HH:MM" aria-label="输入或选择当地公历日期和时刻" aria-haspopup="dialog" aria-controls="date-picker-panel">
+                <input id="time-input" type="hidden">
+                <button id="date-picker-toggle" class="date-picker-toggle" type="button" aria-label="打开日期和时刻选择器" aria-expanded="false" aria-controls="date-picker-panel"><svg class="calendar-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="5.5" width="15" height="14" rx="2"></rect><path d="M8 3.5v4M16 3.5v4M4.5 10h15"></path></svg></button>
+                <div id="date-picker-panel" class="date-picker-panel" role="dialog" aria-label="选择公历日期和时刻" hidden>
+                  <div class="calendar-header">
+                    <button id="calendar-prev" class="calendar-nav" type="button" aria-label="上个月">‹</button>
+                    <span id="calendar-month" class="calendar-month"></span>
+                    <button id="calendar-next" class="calendar-nav" type="button" aria-label="下个月">›</button>
+                  </div>
+                  <div class="calendar-weekdays" aria-hidden="true"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+                  <div id="calendar-grid" class="calendar-grid"></div>
+                  <div class="calendar-time"><span>时刻</span><div class="time-picker-fields"><select id="time-picker-hour" class="time-picker-select" aria-label="选择小时"></select><span aria-hidden="true">:</span><select id="time-picker-minute" class="time-picker-select" aria-label="选择分钟"></select></div></div>
+                </div>
+              </div>
+              <div class="timezone-field"><div class="timezone-picker"><select id="timezone-select" hidden><option value="Asia/Shanghai">中国时间</option><option value="UTC">协调世界时</option><option value="Asia/Tokyo">日本时间</option><option value="Asia/Singapore">新加坡时间</option><option value="Australia/Sydney">悉尼时间</option><option value="Europe/London">伦敦时间</option><option value="Europe/Paris">巴黎时间</option><option value="America/New_York">纽约时间</option><option value="America/Chicago">芝加哥时间</option><option value="America/Denver">丹佛时间</option><option value="America/Los_Angeles">洛杉矶时间</option></select><button id="timezone-toggle" class="timezone-toggle" type="button" aria-label="选择当地时区" aria-expanded="false" aria-controls="timezone-panel"><span id="timezone-current">中国时间</span></button><div id="timezone-panel" class="timezone-panel" role="dialog" aria-label="选择当地时区" hidden><input id="timezone-search" class="timezone-search" type="search" autocomplete="off" placeholder="搜索时区，如 上海、纽约" aria-label="搜索时区"><div id="timezone-options" class="timezone-options" role="listbox" aria-label="可选时区"></div></div></div></div>
+            </form>
+            <p id="date-hint" class="date-hint" role="alert"></p>
+            <div id="date-result" class="date-result" hidden aria-live="polite">
+              <div class="pillar-result"><span class="pillar-label">年柱（立春）</span><span id="date-year-pillar" class="pillar-value">—</span></div>
+              <div class="pillar-result"><span class="pillar-label">月柱（节气）</span><span id="date-month-pillar" class="pillar-value">—</span></div>
+              <div class="pillar-result"><span class="pillar-label">日柱（子初）</span><span id="date-day-pillar" class="pillar-value">—</span></div>
+              <div class="pillar-result"><span class="pillar-label">时柱</span><span id="date-time-pillar" class="pillar-value">—</span></div>
+            </div>
+          </div>
         </div>
       </aside>
     </section>
@@ -743,9 +906,10 @@
       </div>
     </section>
 
-    <p class="note"><span class="note-mark">※</span><span>本图用于说明干支纪年的年度循环，以公元 4 年为甲子年基准，不设置公元 0 年。若用于八字、命理或精确日期换年，通常还需按立春等具体岁首规则判断。</span></p>
+    <p class="note"><span class="note-mark">※</span><span>本图用于说明干支纪年的年度循环，以公元 4 年为甲子年基准，不设置公元 0 年。四柱查询的年柱以立春、月柱以节气、日柱以子初为界；时区用于换算同一时刻的当地日期与时刻。若用于八字等精确排盘，仍需结合出生地点的真太阳时判断。</span></p>
   </main>
 
+  <script src="vendor/lunar/lunar.js"></script>
   <script id="ganzhi-core">
   (function (root) {
     'use strict';
@@ -784,6 +948,53 @@
         zodiac: ZODIAC[branchIndex],
         element: ELEMENTS[stemIndex],
         polarity: stemIndex % 2 === 0 ? '阳' : '阴'
+      };
+    }
+
+    function getDateGanzhi(year, month, day) {
+      if (!Number.isSafeInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+        throw new RangeError('日期必须由有效的整数年、月、日组成');
+      }
+      var daysInMonth = [31, year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+      if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]) {
+        throw new RangeError('公历日期无效');
+      }
+      if (!root.Solar || typeof root.Solar.fromYmd !== 'function') {
+        throw new Error('日期干支计算库未加载');
+      }
+
+      var solar = root.Solar.fromYmd(year, month, day);
+      if (solar.getYear() !== year || solar.getMonth() !== month || solar.getDay() !== day) {
+        throw new RangeError('公历日期无效');
+      }
+      var lunar = solar.getLunar();
+      return {
+        year: year,
+        month: month,
+        day: day,
+        yearPillar: lunar.getYearInGanZhi(),
+        monthPillar: lunar.getMonthInGanZhi(),
+        dayPillar: lunar.getDayInGanZhi()
+      };
+    }
+
+    function getDateTimeGanzhi(year, month, day, hour, minute) {
+      if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+        throw new RangeError('时刻必须为 00:00 至 23:59');
+      }
+      getDateGanzhi(year, month, day);
+      var solar = root.Solar.fromYmdHms(year, month, day, hour, minute, 0);
+      var lunar = solar.getLunar();
+      return {
+        year: year,
+        month: month,
+        day: day,
+        hour: hour,
+        minute: minute,
+        yearPillar: lunar.getYearInGanZhiExact(),
+        monthPillar: lunar.getMonthInGanZhiExact(),
+        dayPillar: lunar.getDayInGanZhiExact(),
+        timePillar: lunar.getTimeInGanZhi()
       };
     }
 
@@ -845,6 +1056,8 @@
       STEMS: STEMS,
       BRANCHES: BRANCHES,
       getGanzhi: getGanzhi,
+      getDateGanzhi: getDateGanzhi,
+      getDateTimeGanzhi: getDateTimeGanzhi,
       stepYear: stepYear,
       buildTimeline: buildTimeline,
       isTimelineCenterYear: isTimelineCenterYear,
@@ -866,7 +1079,8 @@
       animationFrame: null,
       cycleIndex: null,
       stemAngle: 0,
-      branchAngle: 0
+      branchAngle: 0,
+      timeZone: 'Asia/Shanghai'
     };
 
     var reducedMotion = globalThis.matchMedia && globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -891,6 +1105,32 @@
     var yearForm = document.getElementById('year-form');
     var yearInput = document.getElementById('year-input');
     var inputHint = document.getElementById('input-hint');
+    var dateForm = document.getElementById('date-form');
+    var dateInput = document.getElementById('date-input');
+    var timeInput = document.getElementById('time-input');
+    var timeZoneSelect = document.getElementById('timezone-select');
+    var dateHint = document.getElementById('date-hint');
+    var dateResult = document.getElementById('date-result');
+    var dateYearPillar = document.getElementById('date-year-pillar');
+    var dateMonthPillar = document.getElementById('date-month-pillar');
+    var dateDayPillar = document.getElementById('date-day-pillar');
+    var dateTimePillar = document.getElementById('date-time-pillar');
+    var datePicker = document.querySelector('.date-picker');
+    var datePickerToggle = document.getElementById('date-picker-toggle');
+    var datePickerPanel = document.getElementById('date-picker-panel');
+    var calendarPrev = document.getElementById('calendar-prev');
+    var calendarNext = document.getElementById('calendar-next');
+    var calendarMonth = document.getElementById('calendar-month');
+    var calendarGrid = document.getElementById('calendar-grid');
+    var timePickerHour = document.getElementById('time-picker-hour');
+    var timePickerMinute = document.getElementById('time-picker-minute');
+    var timeZonePicker = document.querySelector('.timezone-picker');
+    var timeZoneToggle = document.getElementById('timezone-toggle');
+    var timeZoneCurrent = document.getElementById('timezone-current');
+    var timeZonePanel = document.getElementById('timezone-panel');
+    var timeZoneSearch = document.getElementById('timezone-search');
+    var timeZoneOptions = document.getElementById('timezone-options');
+    var calendarView = null;
 
     function createSvgElement(name, attributes) {
       var element = document.createElementNS(svgNS, name);
@@ -942,6 +1182,296 @@
 
     function shortYear(year) {
       return year < 0 ? '前 ' + Math.abs(year) : String(year);
+    }
+
+    function formatDateValue(year, month, day) {
+      return [year, String(month).padStart(2, '0'), String(day).padStart(2, '0')].join('-');
+    }
+
+    function formatTimeValue(hour, minute) {
+      return String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0');
+    }
+
+    function formatDateTimeValue(year, month, day, hour, minute) {
+      return formatDateValue(year, month, day) + ' ' + formatTimeValue(hour, minute);
+    }
+
+    function readDateInput() {
+      var match = /^(\d{4,})-(\d{2})-(\d{2})(?:\s+\d{2}:\d{2})?$/.exec(dateInput.value.trim());
+      if (!match) return null;
+      return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+    }
+
+    function readTimeInput() {
+      var match = /^(\d{2}):(\d{2})$/.exec(timeInput.value);
+      if (!match) return null;
+      var hour = Number(match[1]);
+      var minute = Number(match[2]);
+      return hour < 24 && minute < 60 ? { hour: hour, minute: minute } : null;
+    }
+
+    function renderDateResult(date, time) {
+      var info = core.getDateTimeGanzhi(date.year, date.month, date.day, time.hour, time.minute);
+      dateYearPillar.textContent = info.yearPillar;
+      dateMonthPillar.textContent = info.monthPillar;
+      dateDayPillar.textContent = info.dayPillar;
+      dateTimePillar.textContent = info.timePillar;
+      dateHint.textContent = '';
+      dateResult.hidden = false;
+    }
+
+    function zonedDateTimeParts(instant, timeZone) {
+      var formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: timeZone,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+      });
+      var values = {};
+      formatter.formatToParts(new Date(instant)).forEach(function (part) {
+        if (part.type !== 'literal') values[part.type] = Number(part.value);
+      });
+      return values;
+    }
+
+    function timeZoneOffset(instant, timeZone) {
+      var parts = zonedDateTimeParts(instant, timeZone);
+      return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - instant;
+    }
+
+    function localDateTimeToInstant(date, time, timeZone) {
+      var localMillis = Date.UTC(date.year, date.month - 1, date.day, time.hour, time.minute, 0);
+      var instant = localMillis - timeZoneOffset(localMillis, timeZone);
+      return localMillis - timeZoneOffset(instant, timeZone);
+    }
+
+    function setDateTimeInputs(parts) {
+      dateInput.value = formatDateTimeValue(parts.year, parts.month, parts.day, parts.hour, parts.minute);
+      timeInput.value = formatTimeValue(parts.hour, parts.minute);
+      syncTimePicker();
+    }
+
+    function populateTimePicker() {
+      for (var hour = 0; hour < 24; hour += 1) {
+        var hourOption = document.createElement('option');
+        hourOption.value = String(hour);
+        hourOption.textContent = String(hour).padStart(2, '0');
+        timePickerHour.appendChild(hourOption);
+      }
+      for (var minute = 0; minute < 60; minute += 1) {
+        var minuteOption = document.createElement('option');
+        minuteOption.value = String(minute);
+        minuteOption.textContent = String(minute).padStart(2, '0');
+        timePickerMinute.appendChild(minuteOption);
+      }
+    }
+
+    function populateTimeZoneSelect() {
+      var fallbackZones = Array.prototype.map.call(timeZoneSelect.options, function (option) { return option.value; });
+      var zones = fallbackZones;
+      try {
+        if (typeof Intl.supportedValuesOf === 'function') zones = Intl.supportedValuesOf('timeZone');
+      } catch (error) {
+        zones = fallbackZones;
+      }
+      if (zones.indexOf('UTC') === -1) zones.unshift('UTC');
+      if (zones.indexOf(state.timeZone) === -1) zones.push(state.timeZone);
+      zones = zones.filter(function (zone, index) { return zones.indexOf(zone) === index; }).sort();
+      var fragment = document.createDocumentFragment();
+      zones.forEach(function (zone) {
+        var option = document.createElement('option');
+        option.value = zone;
+        option.textContent = getTimeZoneLabel(zone);
+        fragment.appendChild(option);
+      });
+      timeZoneSelect.replaceChildren(fragment);
+      timeZoneSelect.value = state.timeZone;
+      timeZoneCurrent.textContent = getTimeZoneLabel(state.timeZone);
+    }
+
+    function getTimeZoneLabel(timeZone) {
+      if (timeZone === 'UTC') return '协调世界时';
+      try {
+        var parts = new Intl.DateTimeFormat('zh-CN', {
+          timeZone: timeZone,
+          timeZoneName: 'shortGeneric'
+        }).formatToParts(new Date());
+        var timeZoneName = parts.filter(function (part) { return part.type === 'timeZoneName'; })[0];
+        if (timeZoneName && timeZoneName.value) return timeZoneName.value.replace(/^GMT/, '格林尼治时间');
+      } catch (error) {
+        var fallbackNames = {
+          'Asia/Shanghai': '中国时间', 'Asia/Tokyo': '日本时间', 'Asia/Singapore': '新加坡时间',
+          'Australia/Sydney': '悉尼时间', 'Europe/London': '伦敦时间', 'Europe/Paris': '巴黎时间',
+          'America/New_York': '纽约时间', 'America/Chicago': '芝加哥时间', 'America/Denver': '丹佛时间',
+          'America/Los_Angeles': '洛杉矶时间'
+        };
+        return fallbackNames[timeZone] || timeZone;
+      }
+      return timeZone;
+    }
+
+    function syncTimePicker() {
+      var time = readTimeInput();
+      if (!time) return;
+      timePickerHour.value = String(time.hour);
+      timePickerMinute.value = String(time.minute);
+    }
+
+    function updateSelectedTime() {
+      var time = { hour: Number(timePickerHour.value), minute: Number(timePickerMinute.value) };
+      var date = readDateInput();
+      timeInput.value = formatTimeValue(time.hour, time.minute);
+      if (date) dateInput.value = formatDateTimeValue(date.year, date.month, date.day, time.hour, time.minute);
+      querySelectedDate();
+    }
+
+    function closeTimeZonePicker() {
+      timeZonePanel.hidden = true;
+      timeZoneToggle.setAttribute('aria-expanded', 'false');
+    }
+
+    function applyTimeZone(nextTimeZone) {
+      var date = readDateInput();
+      var time = readTimeInput();
+      if (date && time) {
+        try {
+          setDateTimeInputs(zonedDateTimeParts(localDateTimeToInstant(date, time, state.timeZone), nextTimeZone));
+        } catch (error) {
+          dateHint.textContent = '时区转换失败，请检查日期和时刻。';
+          return;
+        }
+      }
+      state.timeZone = nextTimeZone;
+      timeZoneSelect.value = nextTimeZone;
+      timeZoneCurrent.textContent = timeZoneSelect.options[timeZoneSelect.selectedIndex].textContent;
+      renderTimeZoneOptions();
+      querySelectedDate();
+    }
+
+    function renderTimeZoneOptions(filter) {
+      var search = (filter || '').trim().toLowerCase();
+      var fragment = document.createDocumentFragment();
+      var matches = 0;
+      Array.prototype.forEach.call(timeZoneSelect.options, function (option) {
+        if (search && option.value.toLowerCase().indexOf(search) === -1 && option.textContent.toLowerCase().indexOf(search) === -1) return;
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'timezone-option' + (option.value === state.timeZone ? ' active' : '');
+        button.textContent = option.textContent;
+        button.setAttribute('role', 'option');
+        button.setAttribute('aria-selected', option.value === state.timeZone ? 'true' : 'false');
+        button.addEventListener('click', function () {
+          closeTimeZonePicker();
+          applyTimeZone(option.value);
+        });
+        fragment.appendChild(button);
+        matches += 1;
+      });
+      if (matches === 0) {
+        var empty = document.createElement('p');
+        empty.className = 'timezone-empty';
+        empty.textContent = '未找到匹配的时区。';
+        fragment.appendChild(empty);
+      }
+      timeZoneOptions.replaceChildren(fragment);
+    }
+
+    function daysInMonth(year, month) {
+      return [31, year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+    }
+
+    function weekdayOfFirstDay(year, month) {
+      var date = new Date(0);
+      date.setUTCFullYear(year, month - 1, 1);
+      return date.getUTCDay();
+    }
+
+    function renderCalendar() {
+      if (!calendarView) return;
+      calendarMonth.textContent = calendarView.year + ' 年 ' + calendarView.month + ' 月';
+      var selected = readDateInput();
+      var fragment = document.createDocumentFragment();
+      var offset = weekdayOfFirstDay(calendarView.year, calendarView.month);
+      for (var blank = 0; blank < offset; blank += 1) {
+        var spacer = document.createElement('span');
+        spacer.className = 'calendar-blank';
+        spacer.setAttribute('aria-hidden', 'true');
+        fragment.appendChild(spacer);
+      }
+      for (var day = 1; day <= daysInMonth(calendarView.year, calendarView.month); day += 1) {
+        var button = document.createElement('button');
+        var isSelected = selected && selected.year === calendarView.year && selected.month === calendarView.month && selected.day === day;
+        button.type = 'button';
+        button.className = 'calendar-day' + (isSelected ? ' selected' : '');
+        button.textContent = day;
+        button.setAttribute('aria-label', calendarView.year + ' 年 ' + calendarView.month + ' 月 ' + day + ' 日');
+        button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+        button.addEventListener('click', (function (selectedDay) {
+          return function () {
+            var time = readTimeInput() || { hour: 0, minute: 0 };
+            dateInput.value = formatDateTimeValue(calendarView.year, calendarView.month, selectedDay, time.hour, time.minute);
+            renderCalendar();
+            querySelectedDate();
+          };
+        }(day)));
+        fragment.appendChild(button);
+      }
+      calendarGrid.replaceChildren(fragment);
+    }
+
+    function openDatePicker() {
+      var selected = readDateInput();
+      var today = new Date();
+      calendarView = selected || { year: today.getFullYear(), month: today.getMonth() + 1 };
+      datePickerPanel.hidden = false;
+      datePickerToggle.setAttribute('aria-expanded', 'true');
+      syncTimePicker();
+      renderCalendar();
+    }
+
+    function closeDatePicker() {
+      datePickerPanel.hidden = true;
+      datePickerToggle.setAttribute('aria-expanded', 'false');
+    }
+
+    function moveCalendarMonth(amount) {
+      calendarView.month += amount;
+      if (calendarView.month === 0) {
+        if (calendarView.year === 1) {
+          calendarView.month = 1;
+          return;
+        }
+        calendarView.year -= 1;
+        calendarView.month = 12;
+      } else if (calendarView.month === 13) {
+        calendarView.year += 1;
+        calendarView.month = 1;
+      }
+      renderCalendar();
+    }
+
+    function querySelectedDate() {
+      var date = readDateInput();
+      if (!date) {
+        dateHint.textContent = '请输入 YYYY-MM-DD 格式的有效公历日期。';
+        dateResult.hidden = true;
+        return;
+      }
+      var time = readTimeInput();
+      if (!time) {
+        dateHint.textContent = '请输入 HH:MM 格式的有效时刻。';
+        dateResult.hidden = true;
+        return;
+      }
+      try {
+        renderDateResult(date, time);
+        if (core.isTimelineCenterYear(date.year)) {
+          stopPlayback();
+          setYear(date.year);
+        }
+      } catch (error) {
+        dateHint.textContent = error && error.message ? error.message : '该日期暂无法计算干支。';
+        dateResult.hidden = true;
+      }
     }
 
     function signedCycleDistance(from, to) {
@@ -1120,6 +1650,52 @@
       stopPlayback();
       setYear(value);
     });
+    dateForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      querySelectedDate();
+    });
+    dateInput.addEventListener('change', function () {
+      querySelectedDate();
+    });
+    dateInput.addEventListener('blur', function () {
+      if (dateInput.value.trim() !== '') querySelectedDate();
+    });
+    timePickerHour.addEventListener('change', updateSelectedTime);
+    timePickerMinute.addEventListener('change', updateSelectedTime);
+    timeZoneToggle.addEventListener('click', function () {
+      if (timeZonePanel.hidden) {
+        closeDatePicker();
+        timeZoneSearch.value = '';
+        renderTimeZoneOptions();
+        timeZonePanel.hidden = false;
+        timeZoneToggle.setAttribute('aria-expanded', 'true');
+        timeZoneSearch.focus();
+      } else {
+        closeTimeZonePicker();
+      }
+    });
+    timeZoneSearch.addEventListener('input', function () {
+      renderTimeZoneOptions(timeZoneSearch.value);
+    });
+    datePickerToggle.addEventListener('click', function () {
+      if (datePickerPanel.hidden) openDatePicker(); else closeDatePicker();
+    });
+    calendarPrev.addEventListener('click', function () { moveCalendarMonth(-1); });
+    calendarNext.addEventListener('click', function () { moveCalendarMonth(1); });
+    document.addEventListener('click', function (event) {
+      if (!datePickerPanel.hidden && !datePicker.contains(event.target)) closeDatePicker();
+      if (!timeZonePanel.hidden && !timeZonePicker.contains(event.target)) closeTimeZonePicker();
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && !datePickerPanel.hidden) {
+        closeDatePicker();
+        datePickerToggle.focus();
+      }
+      if (event.key === 'Escape' && !timeZonePanel.hidden) {
+        closeTimeZonePicker();
+        timeZoneToggle.focus();
+      }
+    });
     slider.addEventListener('input', function () {
       stopPlayback();
       var target = Number(slider.value);
@@ -1145,6 +1721,11 @@
       if (document.hidden && state.playing) stopPlayback();
     });
 
+    populateTimePicker();
+    populateTimeZoneSelect();
+    setDateTimeInputs(zonedDateTimeParts(Date.now(), state.timeZone));
+    renderTimeZoneOptions();
+    querySelectedDate();
     render();
   }());
   </script>
