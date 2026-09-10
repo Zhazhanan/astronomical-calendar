@@ -177,3 +177,101 @@ test('safely rejects slider moves beyond the complete-cycle range', () => {
   assert.equal(getTimelineCenterCandidate(highestCenter, 30), null);
   assert.equal(getTimelineCenterCandidate(highestCenter, 1), null);
 });
+
+function loadTimeControls(extraFunctions = []) {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'tiangan_dizhi_cycle.html'), 'utf8');
+  const sandbox = {
+    dateInput: { value: '2026-09-06 08:15' },
+    timeInput: { value: '08:15' },
+    timePickerHour: { value: '8' },
+    timePickerMinute: { value: '15' },
+    querySelectedDate() {},
+  };
+  vm.createContext(sandbox);
+  for (const name of ['formatDateValue', 'formatTimeValue', 'formatDateTimeValue', 'readDateInput', 'readTimeInput', 'syncTimePicker', 'updateSelectedTime', ...extraFunctions]) {
+    const match = html.match(new RegExp('    function ' + name + '\\([^]*?\\n    \\}'));
+    assert.ok(match, name);
+    vm.runInContext(match[0], sandbox);
+  }
+  return sandbox;
+}
+
+test('typed time is used by the popup and date query', () => {
+  const controls = loadTimeControls();
+  controls.dateInput.value = '2026-09-06 23:47';
+  controls.syncTimePicker();
+  assert.equal(controls.timePickerHour.value, '23');
+  assert.equal(controls.timePickerMinute.value, '47');
+  assert.equal(controls.readTimeInput().hour, 23);
+  assert.equal(controls.readTimeInput().minute, 47);
+  controls.timePickerMinute.value = '48';
+  controls.updateSelectedTime();
+  assert.equal(controls.dateInput.value, '2026-09-06 23:48');
+});
+
+test('invalid typed times do not silently use the previous hidden time', () => {
+  const controls = loadTimeControls();
+  for (const value of ['24:00', '12:60', '12:']) {
+    controls.dateInput.value = '2026-09-06 ' + value;
+    assert.equal(controls.readTimeInput(), null, value);
+  }
+});
+
+function loadYearControls() {
+  const controls = loadTimeControls(['daysInMonth', 'setDateTimeInputs', 'setYear', 'querySelectedDate']);
+  Object.assign(controls, {
+    core: loadGanzhiCore({ withLunar: true }),
+    state: { year: 2026 },
+    yearInput: { value: '1900' },
+    inputHint: { textContent: '' },
+    dateHint: { textContent: '' },
+    dateResult: { hidden: false },
+    calendarView: null,
+    datePickerPanel: { hidden: true },
+    render() {},
+    renderCalendar() {},
+    stopPlayback() {},
+    renderDateResult(date, time) { controls.result = { ...date, ...time }; },
+  });
+  return controls;
+}
+
+test('year selection updates the date while preserving month, day and time', () => {
+  const controls = loadYearControls();
+  controls.setYear(1900);
+  assert.equal(controls.dateInput.value, '1900-09-06 08:15');
+  assert.equal(controls.result.year, 1900);
+  controls.setYear(1901);
+  assert.equal(controls.yearInput.value, '1901');
+});
+
+test('date queries update a stale year field without changing the selected date', () => {
+  const controls = loadYearControls();
+  controls.querySelectedDate();
+  assert.equal(controls.yearInput.value, '2026');
+  assert.equal(controls.dateInput.value, '2026-09-06 08:15');
+});
+
+test('changing a leap-day year clamps to the last day of February', () => {
+  const controls = loadYearControls();
+  controls.dateInput.value = '2024-02-29 23:47';
+  controls.setYear(1900);
+  assert.equal(controls.dateInput.value, '1900-02-28 23:47');
+});
+
+test('early AD years remain parseable after synchronization', () => {
+  const controls = loadYearControls();
+  controls.setYear(4);
+  assert.equal(controls.dateInput.value, '0004-09-06 08:15');
+  assert.equal(controls.readDateInput().year, 4);
+});
+
+test('an open calendar follows the date year and rejected years leave inputs unchanged', () => {
+  const controls = loadYearControls();
+  controls.datePickerPanel.hidden = false;
+  controls.setYear(1900);
+  assert.equal(controls.calendarView.year, 1900);
+  controls.setYear(0);
+  assert.equal(controls.yearInput.value, '1900');
+  assert.equal(controls.dateInput.value, '1900-09-06 08:15');
+});
